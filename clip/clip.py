@@ -6,7 +6,7 @@ from typing import Union, List
 
 import torch
 from PIL import Image
-from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
+from torchvision.transforms import InterpolationMode, Compose, Resize, CenterCrop, ToTensor, Normalize
 from tqdm import tqdm
 
 from .model import build_model
@@ -19,7 +19,7 @@ _MODELS = {
     "RN50": "https://openaipublic.azureedge.net/clip/models/afeb0e10f9e5a86da6080e35cf09123aca3b358a0c3e3b6c78a7b63bc04b6762/RN50.pt",
     "RN101": "https://openaipublic.azureedge.net/clip/models/8fa8567bab74a42d41c5915025a8e4538c3bdbe8804a470a72f30b0d94fab599/RN101.pt",
     "RN50x4": "https://openaipublic.azureedge.net/clip/models/7e526bd135e493cef0776de27d5f42653e6b4c8bf9e0f653bb11773263205fdd/RN50x4.pt",
-    "ViT-B/32": "https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt",
+    "ViT-B32": "https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B32.pt",
 }
 
 
@@ -57,7 +57,7 @@ def _download(url: str, root: str = os.path.expanduser("~/.cache/clip")):
 
 def _transform(n_px):
     return Compose([
-        Resize(n_px, interpolation=Image.BICUBIC),
+        Resize(n_px, interpolation=InterpolationMode.BICUBIC),
         CenterCrop(n_px),
         lambda image: image.convert("RGB"),
         ToTensor(),
@@ -70,7 +70,12 @@ def available_models() -> List[str]:
     return list(_MODELS.keys())
 
 
-def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_available() else "cpu", jit=True):
+def load(
+        name: str, 
+        root: str = os.path.expanduser("~/.cache/clip"), 
+        device: Union[str, torch.device] = "cuda" if torch.cuda.is_available() else "cpu", 
+        jit=True
+    ):
     """Load a CLIP model
 
     Parameters
@@ -93,7 +98,7 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
         A torchvision transform that converts a PIL image into a tensor that the returned model can take as its input
     """
     if name in _MODELS:
-        model_path = _download(_MODELS[name])
+        model_path = _download(_MODELS[name], root=root)
     elif os.path.isfile(name):
         model_path = name
     else:
@@ -131,8 +136,8 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
                     node.copyAttributes(device_node)
 
     model.apply(patch_device)
-    patch_device(model.encode_image)
-    patch_device(model.encode_text)
+    #patch_device(model.encode_image)
+    #patch_device(model.encode_text)
 
     # patch dtype to float32 on CPU
     if str(device) == "cpu":
