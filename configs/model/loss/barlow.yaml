@@ -1,0 +1,3 @@
+name: 'BarlowLossHead'
+embed_dim: ${model.image.embed_dim}
+off_weight: 0.03

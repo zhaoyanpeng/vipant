@@ -1,0 +1,4 @@
+model_root: "/net/nfs2.mosaic/yann/model/cvap" 
+model_name: "test"
+seed: 1213
+eval: False

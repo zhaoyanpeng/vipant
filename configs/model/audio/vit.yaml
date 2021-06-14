@@ -1,0 +1,10 @@
+name: 'AudioHead'
+embed_dim: ${model.image.embed_dim}
+resolution: 
+- ${running.max_audio_len}
+- 128 
+patch_size: 32 
+width: 768 
+stride: 16
+layers: 12
+

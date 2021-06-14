@@ -1,0 +1,9 @@
+# @package _group_
+data_root: "/home/yanpengz/data/audioset"
+csv_root: "/net/nfs2.mosaic/yann/data/audioset/csv"
+idx_name: 'train_10'
+frame_type: "mframe"
+input_resolution: 224
+max_audio_len: 1000
+mel_bins: 128
+seed: 1213
