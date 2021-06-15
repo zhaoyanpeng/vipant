@@ -5,7 +5,7 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 
 import torchaudio
-from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
+from torchvision.transforms import InterpolationMode, Compose, Resize, CenterCrop, ToTensor, Normalize
 from PIL import Image as PILImage
 
 from cvap.utils import seed_all_rng
@@ -62,7 +62,7 @@ def preprocess(cfg: DictConfig) -> None:
     
     def _transform(n_px):
         return Compose([
-            Resize(n_px, interpolation=PILImage.BICUBIC),
+            Resize(n_px, interpolation=InterpolationMode.BICUBIC),
             CenterCrop(n_px),
             lambda image: image.convert("RGB"),
             ToTensor(),
@@ -72,8 +72,11 @@ def preprocess(cfg: DictConfig) -> None:
 
     images = (T(PILImage.open(clip)).numpy() for clip in voice_clips[dcfg.frame_type])
     image_names = (os.path.basename(clip) for clip in voice_clips[dcfg.frame_type])
-    record_name = f"{dcfg.idx_name}/{dcfg.input_resolution}.{dcfg.mel_bins}.tfrecord"
-    save_path = dcfg.data_root + f"/tfrecord/{record_name}"
+    save_path = dcfg.data_root + f"/tfrecord/{dcfg.idx_name}"
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    record_name = f"{dcfg.input_resolution}.{dcfg.mel_bins}.tfrecord"
+    save_path = f"{save_path}/{record_name}"
     PairImageSpectrogramTFRecords.write(spectrograms, images, image_names, fname=save_path)
 
 

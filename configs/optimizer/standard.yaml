@@ -1,5 +1,4 @@
 name: Adam
 lr: 0.0003
 weight_decay: 0.1
-max_norm: 1 
-loss_fct: ce 
+max_norm: 0.5 

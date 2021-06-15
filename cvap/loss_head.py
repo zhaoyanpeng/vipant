@@ -25,6 +25,43 @@ class LossHead(nn.Module):
     def copy_state_dict(self, state_dict): 
         pass
 
+    def infer(self, x1, x2, *args, **kwargs):
+        if not hasattr(self, "x1s") or not hasattr(self, "x2s"): 
+            self.x1s, self.x2s = [], []
+        # normalized features
+        x1 = x1 / x1.norm(dim=-1, keepdim=True)
+        x2 = x2 / x2.norm(dim=-1, keepdim=True)
+        self.x1s.append(x1)
+        self.x2s.append(x2)
+
+    def report(self):
+        x1s = torch.cat(self.x1s)
+        x2s = torch.cat(self.x2s)
+        nsample = x1s.shape[0]
+        labels = torch.arange(nsample, device=x1s.device).unsqueeze(-1)
+        # x1 -> x2
+        x12 = x1s @ x2s.t()
+        ind = x12.argsort(descending=True)
+        r12 = torch.where(ind == labels)[1]
+        
+        t12_1 = torch.where(r12 < 1)[0].shape[0] / nsample * 100. 
+        t12_5 = torch.where(r12 < 5)[0].shape[0] / nsample * 100. 
+
+        # x2 -> x1
+        x21 = x2s @ x1s.t()
+        ind = x21.argsort(descending=True)
+        r21 = torch.where(ind == labels)[1]
+
+        t21_1 = torch.where(r21 < 1)[0].shape[0] / nsample * 100. 
+        t21_5 = torch.where(r21 < 5)[0].shape[0] / nsample * 100. 
+
+        del self.x1s, self.x2s
+        report = (
+            f"I->A: t1 = {t12_1:2.2f} t5 = {t12_5:2.2f} " + 
+            f"A->I: t1 = {t21_1:2.2f} t5 = {t21_5:2.2f}" 
+        )
+        return report
+
 @LOSS_HEADS_REGISTRY.register()
 class CELossHead(LossHead):
     def __init__(self, cfg, **kwargs):
@@ -39,6 +76,8 @@ class CELossHead(LossHead):
         self.load_state_dict(new_dict)
 
     def forward(self, x1, x2, *args, **kwargs):
+        if not self.training:
+            return self.infer(x1, x2)
         # normalized features
         x1 = x1 / x1.norm(dim=-1, keepdim=True)
         x2 = x2 / x2.norm(dim=-1, keepdim=True)
@@ -70,6 +109,8 @@ class BarlowLossHead(LossHead):
         return on_diag, off_diag
     
     def forward(self, x1, x2, *args, **kwargs):
+        if not self.training:
+            return self.infer(x1, x2)
         x1, x2 = self.bn(x1), self.bn(x2)
         c = x1.t() @ x2
         c.div_(x1.size(0))

@@ -35,11 +35,20 @@ class Monitor(nn.Module):
             rcfg.batch_size,
             max_audio_len=rcfg.max_audio_len
         )
+        # evaluation
+        data_path = f"{rcfg.data_root}/{rcfg.eval_name}"
+        self.evalloader = PairImageSpectrogramTFRecords(
+            data_path, 
+            rcfg.batch_size,
+            max_audio_len=rcfg.max_audio_len
+        ) if os.path.isdir(data_path) else None
+        if self.evalloader is not None:
+            self.echo(f"Will do evaluation every {rcfg.peep_rate} steps.")
 
     def learn(self):
         if not self.training:
             with torch.no_grad():
-                return self.infer()
+                return self.infer(self.dataloader)
         self.echo("Training started...")
         self.total_loss = 0
         self.total_step = 0
@@ -77,16 +86,34 @@ class Monitor(nn.Module):
             self.total_loss += loss.item()
             self.total_inst += images.shape[0] 
             if self.total_step % self.cfg.running.peep_rate == 0:
+                report = ""
+                if self.evalloader is not None:
+                    self.eval()
+                    with torch.no_grad():
+                        report = self.infer(self.evalloader, 5000)
+                    self.train()
+                gnorm = sum(
+                    [p.grad.norm(p=2) ** 2 for p in self.params if p.grad is not None]
+                ).item() ** 0.5
                 self.echo(
-                    f"epoch {iepoch}\tstep {self.total_step}\t" +
-                    f"loss {self.total_loss / self.total_step:.5f}\t" + 
-                    f"{self.total_inst / (time.time() - self.start_time):.2f} samples/s"
+                    f"epoch {iepoch:>4} step {self.total_step}\tgnorm {gnorm:.2f} " +
+                    f"loss {self.total_loss / self.total_step:.3f} {report} " + 
+                    f"{self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
                 )
             if self.total_step % self.cfg.running.save_rate == 0:
                 self.save()
         
-    def infer(self):
-        pass
+    def infer(self, dataloader, samples=float("inf")):
+        nsample = 0 
+        for batch in self.dataloader:
+            images, audios = self.make_batch(batch)
+            if nsample > samples:
+                continue # iterate through every batch 
+            image_features = self.image_head(images)
+            audio_features = self.audio_head(audios)
+            self.loss_head(image_features, audio_features)    
+            nsample += images.shape[0]
+        return self.loss_head.report() 
     
     def togpu(self):
         self.image_head.cuda()
@@ -119,6 +146,8 @@ class Monitor(nn.Module):
             self.image_head.load_state_dict(image_head_sd)
             self.audio_head = build_audio_head(local_cfg.model.audio)
             self.audio_head.load_state_dict(audio_head_sd)
+            self.loss_head = build_loss_head(local_cfg.model.loss)
+            self.loss_head.load_state_dict(loss_head_sd)
             self.eval()
         else:
             rcfg = self.cfg.running
@@ -136,11 +165,12 @@ class Monitor(nn.Module):
             self.loss_head = build_loss_head(self.cfg.model.loss)
             self.loss_head.copy_state_dict(extra_sd)
 
-            audio_head_sd = self.audio_head.state_dict()
-            tunable_params = {f"audio_head.{k}": v for k, v in audio_head_sd.items()} 
-            tunable_params.update(
-                {f"loss_head.{k}": v for k, v in self.loss_head.state_dict().items()}
-            )
+            tunable_params = {
+                f"audio_head.{k}": v for k, v in self.audio_head.named_parameters()
+            } 
+            tunable_params.update({
+                f"loss_head.{k}": v for k, v in self.loss_head.named_parameters()
+            })
         self.togpu()
         return tunable_params
 
