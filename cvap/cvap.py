@@ -1,9 +1,11 @@
 import os
 import warnings
 from typing import Union, List
+from collections import defaultdict
 
 import time
 import torch
+import numpy as np
 from torch import nn
 from PIL import Image
 from tqdm import tqdm
@@ -32,14 +34,14 @@ class Monitor(nn.Module):
         data_path = f"{rcfg.data_root}/{rcfg.data_name}"
         self.dataloader = PairImageSpectrogramTFRecords(
             data_path, 
-            rcfg.batch_size,
+            self.cfg.optimizer.batch_size,
             max_audio_len=rcfg.max_audio_len
         )
         # evaluation
         data_path = f"{rcfg.data_root}/{rcfg.eval_name}"
         self.evalloader = PairImageSpectrogramTFRecords(
             data_path, 
-            rcfg.batch_size,
+            self.cfg.optimizer.batch_size,
             max_audio_len=rcfg.max_audio_len
         ) if os.path.isdir(data_path) else None
         if self.evalloader is not None:
@@ -55,10 +57,10 @@ class Monitor(nn.Module):
         self.total_inst = 0
         self.start_time = time.time()
         #self.save() 
-        for iepoch in range(self.cfg.running.epochs):
-            self.epoch(iepoch)
-            if iepoch > 2:
+        for iepoch in range(self.cfg.optimizer.epochs):
+            if iepoch >= 1:
                 break
+            self.epoch(iepoch)
 
     def make_batch(self, batch):
         images, audios = batch["image"], batch["audio"]
@@ -67,41 +69,69 @@ class Monitor(nn.Module):
         return images, audios
 
     def epoch(self, iepoch):
+        all_time = defaultdict(list)
+        last_time = time.time()
         for batch in self.dataloader:
             images, audios = self.make_batch(batch)
+            
+            #this_time = time.time()
+            #all_time["dataloader"].append(this_time - last_time)
+            #last_time = this_time
 
             image_features = self.image_head(images)
             audio_features = self.audio_head(audios)
             loss = self.loss_head(image_features, audio_features)    
 
+            #this_time = time.time()
+            #all_time["forward"].append(this_time - last_time)
+            #last_time = this_time
+
             self.optimizer.zero_grad()
             loss.backward()
-            if self.cfg.optimizer.max_norm > 0:
+            if False and self.cfg.optimizer.max_norm > 0:
                 torch.nn.utils.clip_grad.clip_grad_norm_(
                     self.params, self.cfg.optimizer.max_norm
                 )
+
+            #this_time = time.time()
+            #all_time["backward"].append(this_time - last_time)
+            #last_time = this_time
+
             self.optimizer.step()
+
+            #this_time = time.time()
+            #all_time["optimizer"].append(this_time - last_time)
+            #last_time = this_time
 
             self.total_step += 1
             self.total_loss += loss.item()
             self.total_inst += images.shape[0] 
             if self.total_step % self.cfg.running.peep_rate == 0:
+                def grad_norm():
+                    return sum(
+                        [p.grad.norm(p=2) ** 2 for p in self.params if p.grad is not None]
+                    ).item() ** 0.5
+                self.echo(
+                    f"epoch {iepoch:>4} step {self.total_step}\t" + #gnorm {grad_norm():.2f} " +
+                    f"loss {self.total_loss / self.total_step:.3f} " + 
+                    f"{self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
+                )
+            if self.total_step % self.cfg.running.save_rate == 0:
                 report = ""
                 if self.evalloader is not None:
                     self.eval()
                     with torch.no_grad():
                         report = self.infer(self.evalloader, 5000)
                     self.train()
-                gnorm = sum(
-                    [p.grad.norm(p=2) ** 2 for p in self.params if p.grad is not None]
-                ).item() ** 0.5
-                self.echo(
-                    f"epoch {iepoch:>4} step {self.total_step}\tgnorm {gnorm:.2f} " +
-                    f"loss {self.total_loss / self.total_step:.3f} {report} " + 
-                    f"{self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
-                )
-            if self.total_step % self.cfg.running.save_rate == 0:
+                self.echo(f"{report}")
                 self.save()
+
+            #this_time = time.time()
+            #all_time["summary"].append(this_time - last_time)
+            #last_time = this_time
+
+        #for k, v in all_time.items():
+        #    self.echo(f"{k} {np.mean(v):.2f}")
         
     def infer(self, dataloader, samples=float("inf")):
         nsample = 0 
@@ -126,13 +156,12 @@ class Monitor(nn.Module):
         checkpoint = {
             "cfg": self.cfg,
             "model": (
-                self.image_head.cpu().state_dict(), 
-                self.audio_head.cpu().state_dict(),
-                self.loss_head.cpu().state_dict(),
+                self.image_head.state_dict(), 
+                self.audio_head.state_dict(),
+                self.loss_head.state_dict(),
             )
         }
         torch.save(checkpoint, fsave)
-        self.togpu()
 
     def build_model(self):
         tunable_params = dict()

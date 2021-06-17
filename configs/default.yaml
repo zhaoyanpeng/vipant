@@ -2,3 +2,8 @@ model_root: "/net/nfs2.mosaic/yann/model/cvap"
 model_name: "test"
 seed: 1213
 eval: False
+rank: -1
+num_proc: 1 
+num_gpus: 4 
+port: 22829
+dist_url: "tcp://localhost:${port}"

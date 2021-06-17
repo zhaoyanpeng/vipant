@@ -1,13 +1,57 @@
+import os
 import glob
 import torch
+import numpy as np
 import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
 from itertools import cycle, islice, chain
 from einops import rearrange, repeat
 
+import multiprocessing as mp
+import torch.utils.data as data
 import torch.nn.functional as F
 
+class ImageAudioDataset(data.Dataset):
+    def __init__(self, cfg, data_name):
+        data_path = f"{cfg.data_root}/{data_name}"
+        records = PairImageSpectrogramTFRecords(
+            data_path, 1, max_audio_len=cfg.max_audio_len
+        )
+        self.dataset = list()
+        for record in records:
+            self.dataset.append(record) 
+        self.length = len(self.dataset)
+
+    def _shuffle(self):
+        pass
+
+    def __getitem__(self, index):
+        return self.dataset[index] 
+
+    def __len__(self):
+        return self.length
+
+class ImageAudioCollator:
+    def __init__(self, device=torch.device("cpu")):
+        # RuntimeError: cannot pin 'torch.cuda.FloatTensor' only dense CPU tensors can be pinned
+        # when pin_memory is true, the collator has to return CPU tensors
+        self.device = device
+
+    def __call__(self, records):
+        union = { 
+            k: [record.get(k) for record in records] for k in set().union(*records) 
+        } 
+        union = {
+            "image": torch.tensor(
+                np.concatenate(union["image"], axis=0), device=self.device
+            ), 
+            "audio": torch.tensor(
+                np.concatenate(union["audio"], axis=0), device=self.device
+            ).unsqueeze(1), 
+            "name": union["name"],
+        }
+        return union
 
 class PairImageSpectrogramTFRecords(object):
     def __init__(
@@ -41,7 +85,7 @@ class PairImageSpectrogramTFRecords(object):
             self.batch_size,
             padded_shapes={
                 "name": (),
-                "audio": (None, self.mel_bins),
+                "audio": (self.max_audio_len, self.mel_bins),
                 "image": (None, None, None),
             },
         )

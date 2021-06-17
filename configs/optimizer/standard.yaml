@@ -1,4 +1,8 @@
 name: Adam
 lr: 0.0003
-weight_decay: 0.1
+weight_decay: 1e-6
 max_norm: 0.5 
+lr_weight: 0.2
+lr_bias: 0.0048
+batch_size: ${running.batch_size} 
+epochs: ${running.epochs} 
