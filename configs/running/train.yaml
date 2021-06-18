@@ -4,7 +4,7 @@ data_root: "/home/yanpengz/data/audioset/tfrecord"
 data_name: 'train_balanced'
 eval_name: 'eval'
 max_audio_len: 1000
-peep_rate: 10 
+peep_rate: 1 
 save_rate: 300 
 batch_size: 432 
 epochs: 1000 

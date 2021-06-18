@@ -164,11 +164,21 @@ class Monitor(object):
             self.epoch(iepoch)
 
     def make_batch(self, batch):
+        batch = (
+            torch.tensor(
+                batch[0], device=self.device
+            ), 
+            torch.tensor(
+                batch[1], device=self.device
+            ).unsqueeze(1)
+        )
+        return batch # bare tensors
+
         images, audios = batch["image"], batch["audio"]
 
         images = images.cuda(self.cfg.rank, non_blocking=True)
         audios = audios.cuda(self.cfg.rank, non_blocking=True)
-        return images, audios # directly return tensors
+        return images, audios # directly return dict of tensors
 
         images = torch.tensor(
             np.concatenate(images, axis=0), device=self.device
@@ -181,17 +191,18 @@ class Monitor(object):
 
     def epoch(self, iepoch):
         if self.cfg.rank == 0:
-            #print(f"A {iepoch} x {len(self.dataloader)}")
+            print(f"A {iepoch} x {len(self.dataloader)}")
             all_time = defaultdict(list)
             last_time = time.time()
         for step, batch in enumerate(self.dataloader, start=iepoch * len(self.dataloader)):
             images, audios = self.make_batch(batch)
             
             if self.cfg.rank == 0:
-                #print(f"B")
+                #print(f"B {step} x {iepoch}")
                 this_time = time.time()
                 all_time["dataloader"].append(this_time - last_time)
                 last_time = this_time
+            #continue # test dataloader efficiency
 
             adjust_learning_rate(self.cfg.optimizer, self.optimizer, self.dataloader, step)
 

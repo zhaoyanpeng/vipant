@@ -42,6 +42,10 @@ class ImageAudioCollator:
         union = { 
             k: [record.get(k) for record in records] for k in set().union(*records) 
         } 
+        return (
+            np.concatenate(union["image"], axis=0), 
+            np.concatenate(union["audio"], axis=0),
+        )
         union = {
             "image": torch.tensor(
                 np.concatenate(union["image"], axis=0), device=self.device

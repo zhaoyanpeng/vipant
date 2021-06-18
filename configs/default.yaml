@@ -3,7 +3,8 @@ model_name: "test"
 seed: 1213
 eval: False
 rank: -1
-num_proc: 1 
+mode: "ddp"
+num_proc: 0 # always 0 in ddp mode 
 num_gpus: 4 
 port: 22829
 dist_url: "tcp://localhost:${port}"
