@@ -3,6 +3,7 @@ from typing import Tuple, Union
 from fvcore.common.registry import Registry
 
 import copy
+import threading
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -65,4 +66,8 @@ class ImageHead(nn.Module):
         self.encoder.load_state_dict(state_dict) 
 
     def forward(self, images, *args, **kwargs):
-        return self.encoder(images.type(self.dtype))
+        z = self.encoder(images.type(self.dtype))
+        if kwargs.get("normalized", False):
+            z = z / z.norm(dim=-1, keepdim=True)
+            #print(f"{threading.current_thread().ident} image --{kwargs.get('normalized', False)}")
+        return z 

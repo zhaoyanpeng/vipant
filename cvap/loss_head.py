@@ -3,6 +3,7 @@ from typing import Tuple, Union
 from fvcore.common.registry import Registry
 
 import copy
+import threading
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -84,6 +85,7 @@ class CELossHead(LossHead):
         if not kwargs.get("normalized", False):
             x1 = x1 / x1.norm(dim=-1, keepdim=True)
             x2 = x2 / x2.norm(dim=-1, keepdim=True)
+        #print(f"{threading.current_thread().ident} loss --{kwargs.get('normalized', False)}")
         # cosine similarity as logits
         logit_scale = self.logit_scale.exp()
         logits_per_x1 = logit_scale * x1 @ x2.t()

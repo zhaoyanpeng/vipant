@@ -3,6 +3,7 @@ from typing import Tuple, Union
 from fvcore.common.registry import Registry
 
 import copy
+import threading
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -95,5 +96,8 @@ class AudioHead(nn.Module):
         self.encoder.load_state_dict(new_dict)
 
     def forward(self, audios, *args, **kwargs):
-        return self.encoder(audios.type(self.dtype))
-
+        z = self.encoder(audios.type(self.dtype))
+        if kwargs.get("normalized", False):
+            z = z / z.norm(dim=-1, keepdim=True)
+            #print(f"{threading.current_thread().ident} audio --{kwargs.get('normalized', False)}")
+        return z 

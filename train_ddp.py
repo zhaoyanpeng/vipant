@@ -9,7 +9,8 @@ import torch.multiprocessing as mp
 from torch.nn import DataParallel
 from torch.nn.parallel import DistributedDataParallel
 
-from cvap.cvap_ddp import Monitor
+from cvap.cvap_dp import Monitor as DPMonitor
+from cvap.cvap_ddp import Monitor as DDPMonitor
 from cvap.utils import seed_all_rng, setup_logger
 
 
@@ -31,12 +32,12 @@ def _distributed_worker(local_rank, main_func, cfg, ddp):
     torch.cuda.set_device(local_rank)
     pg = dist.new_group(range(cfg.num_gpus))
     device = torch.device('cuda', local_rank)
-    main_func(cfg, local_rank, ddp, pg, device)
+    main_func(cfg, local_rank, ddp, pg, device, DDPMonitor)
 
 
-def main(cfg, rank, ddp, pg, device):
+def main(cfg, rank, ddp, pg, device, manager):
     cfg.rank = rank
-    seed_all_rng(cfg.seed)
+    seed_all_rng(cfg.seed) # + rank)
 
     output_dir = f"{cfg.model_root}/{cfg.model_name}"
     logger = setup_logger(
@@ -49,27 +50,32 @@ def main(cfg, rank, ddp, pg, device):
     ngpu = torch.cuda.device_count()
     logger.info("World size: {}; rank: {}".format(ngpu, rank))
 
-    torch.cuda.set_device(device)
     torch.backends.cudnn.benchmark=True
     
-    monitor = Monitor(cfg, logger.info, device)
+    monitor = manager(cfg, logger.info, device)
     monitor.learn()
 
 
 @hydra.main(config_path="configs", config_name="default")
 def train(cfg: DictConfig) -> None:
-    #main(cfg, 0, False, False, torch.device('cuda', 0))
-    #return
-    try:
-        mp.spawn(
-            _distributed_worker, 
-            nprocs = cfg.num_gpus, 
-            args = (main, cfg, False), 
-            daemon = False,
-        )
-    except KeyboardInterrupt as e:
-        dist.destroy_process_group()
-
+    if cfg.mode == "dp":
+        cfg.rank = 0
+        torch.cuda.set_device(0)
+        main(cfg, 0, False, False, torch.device('cuda', 0), DPMonitor)
+    elif cfg.mode == "ddp":
+        try:
+            mp.spawn(
+                _distributed_worker, 
+                nprocs = cfg.num_gpus, 
+                args = (main, cfg, False), 
+                daemon = False,
+            )
+        except KeyboardInterrupt as e:
+            dist.destroy_process_group()
+    else:
+        cfg.rank = 0
+        torch.cuda.set_device(0)
+        main(cfg, 0, False, False, torch.device('cuda', 0), None)
 
 if __name__ == "__main__":
     train()
