@@ -2,18 +2,6 @@ from omegaconf import DictConfig, OmegaConf
 import torch
 import hydra
 
-import jax
-from jax import random, numpy as np, value_and_grad, jit, tree_util
-from optax import (
-    chain,
-    clip_by_global_norm,
-    scale_by_adam,
-    scale,
-    apply_updates,
-    add_decayed_weights,
-    masked,
-)
-
 from cvap.cvap import Monitor
 from cvap.utils import seed_all_rng, setup_logger
 

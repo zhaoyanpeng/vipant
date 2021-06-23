@@ -2,9 +2,12 @@ clip_model_root: "/net/nfs2.mosaic/yann/model/clip"
 clip_model_name: "ViT-B32"
 data_root: "/home/yanpengz/data/audioset/tfrecord"
 data_name: 'train_balanced'
-eval_name: 'eval'
+eval_name: 'train_balanced' #'eval' #
+test_name: 'eval'
+eval_samples: 5184 #5000
+test_samples: 5000
 max_audio_len: 1000
 peep_rate: 1 
 save_rate: 300 
-batch_size: 432 
+batch_size: 216 #108 #432 
 epochs: 1000 

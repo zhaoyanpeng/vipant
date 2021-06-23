@@ -1,0 +1,24 @@
+version: v2-alpha
+description: Video-Audio Task 
+tasks:
+  - name: test 
+    image:
+      beaker: Yann/audio
+    arguments: ["bash run_docker.sh train 4 \"eval=False running.save_rate=5 running.epochs=1000 running.batch_size=432 running.eval_samples=5000\""] 
+    datasets:
+      - mountPath: /home/yanpengz/data/audioset/tfrecord
+        source:
+          beaker: Yann/audioset_balanced 
+      - mountPath: /net/nfs2.mosaic/yann/model/clip 
+        source:
+          beaker: Yann/clip_model 
+    result:
+      path: /net/nfs2.mosaic/yann/model/cvap
+    resources:
+      gpuCount: 4  
+      cpuCount: 32
+      memory: 100GiB
+    context:
+      cluster: ai2/on-prem-ai2-server #ai2/on-prem-aristo #
+      priority: normal
+

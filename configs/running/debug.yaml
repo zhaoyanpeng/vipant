@@ -3,6 +3,9 @@ clip_model_name: "ViT-B32"
 data_root: "/home/yanpengz/data/audioset/tfrecord"
 data_name: 'train_10'
 eval_name: 'train_10'
+test_name: 'train_10'
+eval_samples: 5000
+test_samples: 5000
 max_audio_len: 1000
 peep_rate: 2 
 save_rate: 2 

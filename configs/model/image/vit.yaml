@@ -4,4 +4,3 @@ resolution: 224
 patch_size: 32 
 width: 768 
 layers: 12
-

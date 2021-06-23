@@ -38,14 +38,15 @@ def _distributed_worker(local_rank, main_func, cfg, ddp):
 def main(cfg, rank, ddp, pg, device, manager):
     cfg.rank = rank
     seed_all_rng(cfg.seed) # + rank)
-
-    output_dir = f"{cfg.model_root}/{cfg.model_name}"
+    
+    output_dir = f"{cfg.alias_root}/{cfg.model_name}"
     logger = setup_logger(
         output_dir=output_dir, rank=rank, output=output_dir,
     )
-
-    cfg_str = OmegaConf.to_yaml(cfg)
-    logger.info(f"\n\n{cfg_str}")
+    
+    if not cfg.eval:
+        cfg_str = OmegaConf.to_yaml(cfg)
+        logger.info(f"\n\n{cfg_str}")
 
     ngpu = torch.cuda.device_count()
     logger.info("World size: {}; rank: {}".format(ngpu, rank))

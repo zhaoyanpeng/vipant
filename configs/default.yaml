@@ -1,7 +1,9 @@
+alias_root: "/net/nfs2.mosaic/yann/model/cvap" 
 model_root: "/net/nfs2.mosaic/yann/model/cvap" 
 model_name: "test"
+model_file: "00000204.pth"
 seed: 1213
-eval: False
+eval: True 
 rank: -1
 mode: "ddp"
 num_proc: 0 # always 0 in ddp mode 

@@ -3,6 +3,7 @@ import math
 import random
 import logging
 import numpy, torch
+import torch.distributed as dist
 
 def seed_all_rng(seed):
     random.seed(seed)
@@ -25,7 +26,7 @@ def setup_logger(output_dir=None, name="cvap", rank=0, output=None):
         logger.info(f'Creating {output_dir}')
         if rank == 0: 
             os.makedirs(output_dir)
-    #dist.barrier() # output dir should have been ready
+    dist.barrier() # output dir should have been ready
     if output is not None:
         filename = os.path.join(output_dir, f'train_{rank}.out')
         handler = logging.FileHandler(filename, 'w')

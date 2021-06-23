@@ -7,6 +7,7 @@ import threading
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.distributed as dist
 from torch import nn
 
 from clip import Transformer, ModifiedResNet, VisualTransformer  
@@ -31,10 +32,12 @@ class LossHead(nn.Module):
         if not hasattr(self, "x1s") or not hasattr(self, "x2s"): 
             self.x1s, self.x2s = [], []
         # normalized features
-        x1 = x1 / x1.norm(dim=-1, keepdim=True)
-        x2 = x2 / x2.norm(dim=-1, keepdim=True)
+        if not kwargs.get("normalized", False):
+            x1 = x1 / x1.norm(dim=-1, keepdim=True)
+            x2 = x2 / x2.norm(dim=-1, keepdim=True)
         self.x1s.append(x1)
         self.x2s.append(x2)
+        return None  
 
     def report(self):
         x1s = torch.cat(self.x1s)
@@ -60,7 +63,7 @@ class LossHead(nn.Module):
         del self.x1s, self.x2s
         report = (
             f"I->A: t1 = {t12_1:2.2f} t5 = {t12_5:2.2f} " + 
-            f"A->I: t1 = {t21_1:2.2f} t5 = {t21_5:2.2f}" 
+            f"A->I: t1 = {t21_1:2.2f} t5 = {t21_5:2.2f} @ {nsample}" 
         )
         return report
 
@@ -80,7 +83,9 @@ class CELossHead(LossHead):
 
     def forward(self, x1, x2, *args, **kwargs):
         if not self.training:
-            return self.infer(x1, x2)
+            if dist.get_rank() == 0:
+                return self.infer(x1, x2, *args, **kwargs)
+            return None 
         # normalized features
         if not kwargs.get("normalized", False):
             x1 = x1 / x1.norm(dim=-1, keepdim=True)
