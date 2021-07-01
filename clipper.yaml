@@ -1,0 +1,19 @@
+version: v2-alpha
+description: Audioset Clipper 
+tasks:
+  - name: all-0-10 
+    image:
+      beaker: Yann/vclip
+    arguments: ["python dump_clip.py --home /output --chunk_b 0 --chunk_e 10 --nprocess 96 --portion all --peeprate 50"] 
+    envVars:
+      - name: OUTPUT_PATH
+        value: /output
+    result:
+      path: /output
+    resources:
+      gpuCount: 0  
+      cpuCount: 96 #memory: 100GiB # take all by default
+    context:
+      cluster: ai2/yann-prem-cpus-large-plus #ai2/yann-prem-cpus-large #ai2/yann-prem-cpus 
+      priority: high 
+
