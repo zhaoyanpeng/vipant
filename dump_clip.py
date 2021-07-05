@@ -12,6 +12,10 @@ import numpy as np
 from collections import defaultdict
 from torchvision.transforms import InterpolationMode, Compose, Resize, CenterCrop, ToTensor, Normalize
 from PIL import Image as PILImage
+from google.cloud import storage
+
+storage_client = storage.Client()
+bucket = storage_client.bucket("yannaudioset")
 
 from clip import load 
 from cvap.utils import seed_all_rng
@@ -23,6 +27,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--home', default='/home/yanpengz', type=str, help='')
 parser.add_argument('--csv_root', default='./csv', type=str, help='')
 parser.add_argument('--keepdata', default=False, type=bool, help='')
+parser.add_argument('--check_gs', default=True, type=bool, help='')
 parser.add_argument('--nprocess', default=1, type=int, help='')
 parser.add_argument('--peeprate', default=100000, type=int, help='')
 parser.add_argument('--portion', default="unbalanced", type=str, help='')
@@ -64,6 +69,26 @@ def _load_clip_model(cfg):
     model.train(False)
     return model
 #clip_model = _load_clip_model(cfg)
+
+def _build_name_set(prefix):
+    def build_set(bbs):
+        ytids = set()
+        for x in bbs:
+            ytid = x.name.rsplit("/", 1)[-1].split(".", 1)[0]
+            ytids.add(ytid)
+        return ytids
+    aclip_list = storage_client.list_blobs('yannaudioset', prefix=f'{prefix}/aclip_128')
+    frame_list = storage_client.list_blobs('yannaudioset', prefix=f'{prefix}/frame_224')
+    
+    set0 = build_set(aclip_list)
+    set1 = build_set(frame_list)
+    # print(len(set0), len(set1))
+    return set0 & set1
+if cfg.check_gs:
+    #part = "all_0_35000"
+    done_set = _build_name_set(part)
+else:
+    done_set = set()
 
 def _transform(n_px):
     return Compose([
@@ -138,11 +163,35 @@ def collect_ytid(csv_list):
     print(f"total {nrow} examples.")
     return list(ids.keys()), ids
 
+def skip_dl(ytid):
+    name = ytid[0]  
+    if not cfg.check_gs:
+        return False
+    url = cfg.tgt_url_base
+    #url = cfg.tgt_url_base.rsplit("/", 1)[0] + "/all_0_35000"
+
+    args = ["gsutil -q stat", f"{url}/{audio_np_root.split('/')[-1]}/{name}*"]
+    _, _, c0 = run(args)
+    #print(c0, " ".join(args))
+
+    args = ["gsutil -q stat", f"{url}/{frame_np_root.split('/')[-1]}/{name}*"]
+    _, _, c1 = run(args)
+    #print(c1, " ".join(args))
+    
+    return c0 + c1 == 0
+
 def dl_video(ytid):
     """ copy from cfg.src_url_base 
     :param ytid: (ytid, [(start_time, end_time, [label0, label1, ...])]) 
     """
+    #if skip_dl(ytid):
+    #    return "", "", 0, None
     name = ytid[0]  
+    if name in done_set:
+        #print(f"{name} done")
+        return "", "", 0, None
+    #print(f"{name} dl")
+    #return "", "", 0, None
     gfile = f"{cfg.src_url_base}/{name}/{name}.mp4"
     ofile = f"{vroot}/{name}.mp4" 
     out, err, code = run(["gsutil -m", "cp", gfile, ofile])
@@ -328,16 +377,17 @@ def mp_worker(ytid):
     try: # download
         #if name != "---1_cCGK4M" and name != "--PJHxphWEs":
         #    return name, 0 # debug 
-        vfile = f"{vroot}/{name}.mp4" 
+        code, vfile = 1, f"{vroot}/{name}.mp4" 
         if not os.path.isfile(vfile):
             out, err, code, vfile = dl_video(ytid)
         #print(ytid, vfile)
     except Exception as e:
-        vfile = None
+        code, vfile = 1, None
         print(f"Err in downloading {name}: {e}")
         pass
+    flag = 1 if code == 0 else 0
     if vfile is None: 
-        return name, 0
+        return name, flag 
     
 
     try: # clip extraction
@@ -387,7 +437,8 @@ def mp_handler(param_list, nprocess=1, secs=30):
     :param nprocess: int
     :param secs: check pool status every #secs
     """
-    print(f"total {len(param_list)} videos to download.")
+    num_task = len(param_list)
+    print(f"total {num_task - len(done_set)} / {num_task} videos to download.")
     p = multiprocessing.Pool(nprocess)
     def write_err(results):
         with open(err_file, 'w') as f:

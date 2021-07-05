@@ -29,6 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
+ENV GOOGLE_APPLICATION_CREDENTIALS=/audio/configs/ai2-alexandria-fbf4c720d4a4.json
+
 COPY csv /audio/csv
 COPY clip /audio/clip
 COPY cvap /audio/cvap
