@@ -83,7 +83,7 @@ class CELossHead(LossHead):
 
     def forward(self, x1, x2, *args, **kwargs):
         if not self.training:
-            if dist.get_rank() == 0:
+            if not dist.is_initialized() or dist.get_rank() == 0:
                 return self.infer(x1, x2, *args, **kwargs)
             return None 
         # normalized features
