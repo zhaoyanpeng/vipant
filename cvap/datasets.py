@@ -1,5 +1,6 @@
 import os
 import glob
+import json
 import torch
 import numpy as np
 import tensorflow as tf
@@ -28,6 +29,52 @@ class ImageAudioDataset(data.Dataset):
 
     def __getitem__(self, index):
         return self.dataset[index] 
+
+    def __len__(self):
+        return self.length
+
+class ImageAudioDatasetNpz(data.Dataset):
+    """ `__getitem__' loads .npz from disk.
+    """
+    def __init__(self, cfg, data_name):
+        data_path = f"{cfg.data_root}/{data_name}.csv"
+        assert os.path.isfile(data_path), f"{data_path} is not a file."
+        self.dataset = list()
+        with open(data_path, "r") as fr:
+            for line in fr:
+                record = json.loads(line)
+                self.dataset.append(record) 
+        self.length = len(self.dataset)
+        self.cfg = cfg
+
+    def _shuffle(self):
+        pass
+
+    def __getitem__(self, index):
+        aclip = self.dataset[index]["aclip"] 
+        frame = self.dataset[index]["frame"]
+
+        aclip_file = f"{self.cfg.data_root}/{aclip}"
+        frame_file = f"{self.cfg.data_root}/{frame}"
+
+        max_audio_len = self.cfg.max_audio_len
+
+        images = np.load(frame_file)
+        images = [images[key] for key in images.files if len(images[key]) != 0]
+        assert len(images) != 0, f"no frame exist: |images| = {len(images)}"
+        idx = np.random.choice(len(images), 1)[0]
+        image = images[idx] 
+
+        audio = np.load(aclip_file)["flag"] # `flag' is used as the key accidentally 
+        npad =  self.cfg.max_audio_len - audio.shape[0]
+        if npad > 0:
+            audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
+        
+        image = image[None]
+        audio = audio[None]
+
+        item = {"image": image, "audio": audio}
+        return item 
 
     def __len__(self):
         return self.length

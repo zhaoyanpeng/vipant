@@ -19,7 +19,7 @@ from .loss_head import build_loss_head
 from .image_head import build_image_head
 from .audio_head import build_audio_head
 
-from .datasets import ImageAudioCollator, ImageAudioDataset
+from .datasets import ImageAudioCollator, ImageAudioDataset, ImageAudioDatasetNpz
 from .utils import exclude_bias_or_norm, adjust_learning_rate
 from .module import LARS
 
@@ -147,7 +147,10 @@ class Monitor(object):
         assert self.cfg.optimizer.batch_size % self.cfg.num_gpus == 0
         def build_dataloader(cfg, data_name, shuffle=True):
             rcfg = cfg.running
-            dataset = ImageAudioDataset(rcfg, data_name)
+            if data_name.startswith("npz"):
+                dataset = ImageAudioDatasetNpz(rcfg, data_name)
+            else:
+                dataset = ImageAudioDataset(rcfg, data_name)
             sampler = torch.utils.data.distributed.DistributedSampler(
                 dataset, shuffle=shuffle
             ) 
@@ -245,6 +248,9 @@ class Monitor(object):
         for step, batch in enumerate(self.dataloader, start=iepoch * len(self.dataloader)):
             images, audios = self.make_batch(batch)
             self.timeit(all_time, key="data")
+
+            #print(images.size(), audios.size())
+            #break
 
             adjust_learning_rate(self.cfg.optimizer, self.optimizer, self.dataloader, step)
 

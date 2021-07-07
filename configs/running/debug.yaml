@@ -1,6 +1,6 @@
 clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
 clip_model_name: "ViT-B32"
-data_root: "/home/yanpengz/data/audioset/tfrecord"
+data_root: "/home/yanpengz/data/balanced/tfrecord"
 data_name: 'train_10'
 eval_name: 'train_10'
 test_name: 'train_10'
