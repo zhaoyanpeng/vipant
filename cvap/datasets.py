@@ -14,14 +14,16 @@ import torch.utils.data as data
 import torch.nn.functional as F
 
 class ImageAudioDataset(data.Dataset):
-    def __init__(self, cfg, data_name):
+    def __init__(self, cfg, data_name, train):
         data_path = f"{cfg.data_root}/{data_name}"
         records = PairImageSpectrogramTFRecords(
             data_path, 1, max_audio_len=cfg.max_audio_len
         )
         self.dataset = list()
-        for record in records:
+        for iline, record in enumerate(records):
             self.dataset.append(record) 
+            if not train and iline + 1 == cfg.eval_samples:
+                break
         self.length = len(self.dataset)
 
     def _shuffle(self):
@@ -36,15 +38,18 @@ class ImageAudioDataset(data.Dataset):
 class ImageAudioDatasetNpz(data.Dataset):
     """ `__getitem__' loads .npz from disk.
     """
-    def __init__(self, cfg, data_name):
+    def __init__(self, cfg, data_name, train):
         data_path = f"{cfg.data_root}/{data_name}.csv"
         assert os.path.isfile(data_path), f"{data_path} is not a file."
         self.dataset = list()
         with open(data_path, "r") as fr:
-            for line in fr:
+            for iline, line in enumerate(fr):
                 record = json.loads(line)
                 self.dataset.append(record) 
+                if not train and iline + 1 == cfg.eval_samples:
+                    break
         self.length = len(self.dataset)
+        self.train = train
         self.cfg = cfg
 
     def _shuffle(self):
@@ -62,7 +67,10 @@ class ImageAudioDatasetNpz(data.Dataset):
         images = np.load(frame_file)
         images = [images[key] for key in images.files if len(images[key]) != 0]
         assert len(images) != 0, f"no frame exist: |images| = {len(images)}"
-        idx = np.random.choice(len(images), 1)[0]
+        if self.train:
+            idx = np.random.choice(len(images), 1)[0]
+        else:
+            idx = int(np.ceil(len(images) / 2)) - 1
         image = images[idx] 
 
         audio = np.load(aclip_file)["flag"] # `flag' is used as the key accidentally 

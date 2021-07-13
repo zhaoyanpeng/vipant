@@ -128,16 +128,17 @@ class Monitor(object):
         self.model = DistributedDataParallel(
             model, device_ids=[cfg.rank], find_unused_parameters=True
         ) if torch.distributed.is_initialized() else model 
+        self.model.train(not cfg.eval)
         self.build_optimizer(tunable_params)
 
     def build_data(self):
-        def build_dataloader(cfg, data_name, shuffle=True):
+        def build_dataloader(cfg, data_name, shuffle=True, train=True):
             ddp_mode = torch.distributed.is_initialized()
             rcfg = cfg.running
             if data_name.startswith("npz"):
-                dataset = ImageAudioDatasetNpz(rcfg, data_name)
+                dataset = ImageAudioDatasetNpz(rcfg, data_name, train)
             else:
-                dataset = ImageAudioDataset(rcfg, data_name)
+                dataset = ImageAudioDataset(rcfg, data_name, train)
             if ddp_mode:
                 assert self.cfg.optimizer.batch_size % self.cfg.num_gpus == 0
                 sampler = torch.utils.data.distributed.DistributedSampler(
@@ -145,7 +146,10 @@ class Monitor(object):
                 ) 
                 per_device_batch_size = cfg.optimizer.batch_size // cfg.num_gpus
             else:
-                sampler = torch.utils.data.RandomSampler(dataset)
+                sampler = (
+                    torch.utils.data.RandomSampler(dataset) if shuffle else
+                    torch.utils.data.SequentialSampler(dataset)
+                )
                 per_device_batch_size = cfg.optimizer.batch_size
             dataloader = torch.utils.data.DataLoader(
                 dataset, 
@@ -162,18 +166,19 @@ class Monitor(object):
         _, self.dataloader = build_dataloader(
             self.cfg, data_name, shuffle=(not self.cfg.eval)
         )
-        self.echo(f"Instantiating main dataloader from `{data_name}'.")
+        self.echo(f"Instantiating main dataloader from `{data_name}': total {len(self.dataloader)} batches.")
         # evaluation
         eval_name = "IGNORE_ME" if self.cfg.eval else rcfg.eval_name
         data_path = f"{rcfg.data_root}/{eval_name}"
         _, self.evalloader = build_dataloader(
-            self.cfg, eval_name, shuffle=False
+            self.cfg, eval_name, shuffle=False, train=False
         ) if os.path.isdir(data_path) or os.path.isfile(f"{data_path}.csv") else (None, None)
         if self.evalloader is not None:
-            self.echo(f"Will do evaluation every {rcfg.save_rate} steps.")
+            self.echo(f"Will do evaluation every {rcfg.save_rate} steps on {len(self.evalloader)} batches.")
 
     def learn(self):
         if not self.model.training:
+            self.echo("Evaluating started...")
             with torch.no_grad():
                 report = self.infer(self.dataloader, samples=self.cfg.running.eval_samples)
                 self.echo(f"{report}")
@@ -296,17 +301,23 @@ class Monitor(object):
         self.timeit(all_time, show=True)
         
     def infer(self, dataloader, samples=float("inf"), iepoch=0):
-        nsample, nchunk = 0, 1 
+        nsample, nchunk, nbatch = 0, 1, len(dataloader) 
+        device_ids = [i for i in range(self.cfg.num_gpus)]
         if isinstance(self.model, DistributedDataParallel):
             dataloader.sampler.set_epoch(iepoch)
             nchunk = self.cfg.num_gpus
-        for batch in self.dataloader:
-            images, audios = self.make_batch(batch)
+        start_time = time.time()
+        for ibatch, batch in enumerate(dataloader):
             if nsample >= samples:
-                continue # iterate through every batch 
-            loss = self.model(images, audios)
+                #print(f"{nsample}\t{ibatch}/{nbatch} continue")
+                break #continue # iterate through every batch 
+            images, audios = self.make_batch(batch)
+            #msg = f"{images[0, 0, 50, 50:55]} {audios[0, 0, 50, 50:55]}" # if ibatch == 0 else ""
+            #print(f"{nsample}\t{ibatch}/{nbatch} done {msg}")
+            loss = self.model(images, audios, device_ids=device_ids)
             nsample += images.shape[0] * nchunk
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
+        self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
         return model.report()
 
     def save(self):

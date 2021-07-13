@@ -1,7 +1,7 @@
 clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
 clip_model_name: "ViT-B32"
 data_root: "/home/yanpengz/data/audioset" 
-data_name: 'npz_balanced_train_segments'
+data_name: 'npz_unbalanced_train_segments'
 eval_name: 'npz_balanced_train_segments' #'eval' #
 test_name: 'eval'
 eval_samples: 5184 #5000
@@ -9,5 +9,5 @@ test_samples: 5000
 max_audio_len: 1000
 peep_rate: 1 
 save_rate: 300 
-batch_size: 108 #432 #216 # 
+batch_size: 432 #108 #216 # 
 epochs: 1000 
