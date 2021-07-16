@@ -1,0 +1,9 @@
+name: 'ImageHead'
+embed_dim: 1024 
+resolution: 224 
+width: 64 
+layers:
+- 3 
+- 4 
+- 6 
+- 3 

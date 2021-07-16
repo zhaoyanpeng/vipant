@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from typing import Tuple, Union
 from fvcore.common.registry import Registry
+from omegaconf.listconfig import ListConfig
 
 import copy
 import threading
@@ -23,7 +24,7 @@ def build_image_head(cfg, **kwargs):
 class ImageHead(nn.Module):
     def __init__(self, cfg, **kwargs):
         super().__init__()
-        if isinstance(cfg.layers, (tuple, list)):
+        if isinstance(cfg.layers, (tuple, list, ListConfig)):
             heads = cfg.width * 32 // 64
             self.encoder = ModifiedResNet(
                 input_resolution=cfg.resolution,
