@@ -56,6 +56,7 @@ class ImageAudioDatasetNpz(data.Dataset):
         pass
 
     def __getitem__(self, index):
+        name = self.dataset[index]["id"] 
         aclip = self.dataset[index]["aclip"] 
         frame = self.dataset[index]["frame"]
 
@@ -81,7 +82,7 @@ class ImageAudioDatasetNpz(data.Dataset):
         image = image[None]
         audio = audio[None]
 
-        item = {"image": image, "audio": audio}
+        item = {"image": image, "audio": audio, "name": name}
         return item 
 
     def __len__(self):
@@ -100,6 +101,7 @@ class ImageAudioCollator:
         return (
             np.concatenate(union["image"], axis=0), 
             np.concatenate(union["audio"], axis=0),
+            union["name"],
         )
         union = {
             "image": torch.tensor(

@@ -36,7 +36,7 @@ class CVAP(nn.Module):
     def forward(self, images, audios, *args, **kwargs):
         device_ids = kwargs.get("device_ids", [0])
         # how to asynchronize the two `data_parallel` 
-        kwargs = {"normalized": True}
+        kwargs = {"normalized": True, "names": kwargs.get("names", None)}
         image_features = data_parallel(
             self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
         )
@@ -59,9 +59,9 @@ class CVAP(nn.Module):
             self.loss_head.state_dict(),
         )
 
-    def report(self):
+    def report(self, gold_file=None):
         if not dist.is_initialized() or dist.get_rank() == 0:
-            return self.loss_head.report()
+            return self.loss_head.report(gold_file=gold_file)
         else:
             return ""
     
@@ -164,9 +164,10 @@ class Monitor(object):
         rcfg = self.cfg.running
         data_name = rcfg.eval_name if self.cfg.eval else rcfg.data_name
         _, self.dataloader = build_dataloader(
-            self.cfg, data_name, shuffle=(not self.cfg.eval)
+            self.cfg, data_name, shuffle=(not self.cfg.eval), train=(not self.cfg.eval)
         )
         self.echo(f"Instantiating main dataloader from `{data_name}': total {len(self.dataloader)} batches.")
+        self.gold_file = f"{rcfg.data_root}/{data_name}.csv"
         # evaluation
         eval_name = "IGNORE_ME" if self.cfg.eval else rcfg.eval_name
         data_path = f"{rcfg.data_root}/{eval_name}"
@@ -175,6 +176,7 @@ class Monitor(object):
         ) if os.path.isdir(data_path) or os.path.isfile(f"{data_path}.csv") else (None, None)
         if self.evalloader is not None:
             self.echo(f"Will do evaluation every {rcfg.save_rate} steps on {len(self.evalloader)} batches.")
+            self.gold_file = f"{rcfg.data_root}/{eval_name}.csv"
 
     def learn(self):
         if not self.model.training:
@@ -205,7 +207,8 @@ class Monitor(object):
             ), 
             torch.tensor(
                 batch[1], device=self.device
-            ).unsqueeze(1)
+            ).unsqueeze(1),
+            batch[2], # sample id or name
         )
         return batch # bare tensors
 
@@ -246,7 +249,7 @@ class Monitor(object):
         device_ids = [i for i in range(self.cfg.num_gpus)]
         nchunk = dist.get_world_size() if torch.distributed.is_initialized() else 1  
         for step, batch in enumerate(self.dataloader, start=iepoch * len(self.dataloader)):
-            images, audios = self.make_batch(batch)
+            images, audios, _ = self.make_batch(batch)
             self.timeit(all_time, key="data")
 
             #print(images.size(), audios.size())
@@ -311,14 +314,14 @@ class Monitor(object):
             if nsample >= samples:
                 #print(f"{nsample}\t{ibatch}/{nbatch} continue")
                 break #continue # iterate through every batch 
-            images, audios = self.make_batch(batch)
+            images, audios, names = self.make_batch(batch)
             #msg = f"{images[0, 0, 50, 50:55]} {audios[0, 0, 50, 50:55]}" # if ibatch == 0 else ""
             #print(f"{nsample}\t{ibatch}/{nbatch} done {msg}")
-            loss = self.model(images, audios, device_ids=device_ids)
+            loss = self.model(images, audios, device_ids=device_ids, names=names)
             nsample += images.shape[0] * nchunk
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
         self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
-        return model.report()
+        return model.report(gold_file=self.gold_file)
 
     def save(self):
         fsave = f"{self.cfg.model_root}/{self.cfg.model_name}/{self.total_step:08d}.pth"
