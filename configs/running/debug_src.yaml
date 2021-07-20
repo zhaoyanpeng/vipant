@@ -1,9 +1,9 @@
 clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
 clip_model_name: "ViT-B32"
 data_root: "/home/yanpengz/data/audioset" #"/home/yanpengz/data/audioset/tfrecord"
-data_name: 'npz_train_10' # 'train_10'
-eval_name: 'npz_train_10' # 'train_10'
-test_name: 'npz_train_10' # 'train_10'
+data_name: 'src_train_10' 
+eval_name: 'src_train_10' 
+test_name: 'src_train_10' 
 eval_samples: 5000
 test_samples: 5000
 max_audio_len: 1000

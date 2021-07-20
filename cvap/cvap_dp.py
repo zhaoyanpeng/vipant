@@ -20,7 +20,7 @@ from .loss_head import build_loss_head
 from .image_head import build_image_head
 from .audio_head import build_audio_head
 
-from .datasets import ImageAudioCollator, ImageAudioDataset, ImageAudioDatasetNpz
+from .datasets import ImageAudioCollator, ImageAudioDataset, ImageAudioDatasetSrc, ImageAudioDatasetNpz
 from .utils import exclude_bias_or_norm, adjust_learning_rate
 from .module import LARS
 
@@ -135,7 +135,9 @@ class Monitor(object):
         def build_dataloader(cfg, data_name, shuffle=True, train=True):
             ddp_mode = torch.distributed.is_initialized()
             rcfg = cfg.running
-            if data_name.startswith("npz"):
+            if data_name.startswith("src"):
+                dataset = ImageAudioDatasetSrc(rcfg, data_name, train)
+            elif data_name.startswith("npz"):
                 dataset = ImageAudioDatasetNpz(rcfg, data_name, train)
             else:
                 dataset = ImageAudioDataset(rcfg, data_name, train)

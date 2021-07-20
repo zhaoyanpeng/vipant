@@ -11,3 +11,13 @@ peep_rate: 1
 save_rate: 3 
 batch_size: 64 
 epochs: 1000 
+# vision backbone
+resolution: ${model.image.resolution}
+# kaldi: audio feature extractor
+frame_length: 25
+frame_shift: 10
+window_type: hamming
+num_mel_bins: 128
+low_freq: 0.0
+high_freq: 8000
+use_log_fbank: True
