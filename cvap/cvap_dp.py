@@ -92,19 +92,29 @@ class CVAP(nn.Module):
             self.cuda(self.cfg.rank) 
         else:
             rcfg = self.cfg.running
-            model, self.T = load(
-                rcfg.clip_model_name, rcfg.clip_model_root, device="cpu", jit=False
-            )
-            image_head_sd = model.visual.state_dict()
+            try:
+                model, self.T = load(
+                    rcfg.clip_model_name, rcfg.clip_model_root, device="cpu", jit=False
+                )
+                image_head_sd = model.visual.state_dict()
+                from_scratch = False
+            except Exception as e:
+                self.echo(f"Will learn from scratch because: {e}") 
+                from_scratch = True
             self.image_head = build_image_head(self.cfg.model.image)
-            self.image_head.copy_state_dict(image_head_sd)
+            if not from_scratch:
+                self.image_head.copy_state_dict(image_head_sd)
+                self.echo("Initialize image encoder from `image_head`.")
 
             self.audio_head = build_audio_head(self.cfg.model.audio)
-            self.audio_head.copy_state_dict(image_head_sd)
+            if not from_scratch and not self.cfg.model.audio.from_scratch:
+                self.audio_head.copy_state_dict(image_head_sd)
+                self.echo("Initialize audio encoder from `image_head`.")
                 
-            extra_sd = {"logit_scale": model.logit_scale}
             self.loss_head = build_loss_head(self.cfg.model.loss)
-            self.loss_head.copy_state_dict(extra_sd)
+            if not from_scratch and not self.cfg.model.audio.from_scratch:
+                extra_sd = {"logit_scale": model.logit_scale}
+                self.loss_head.copy_state_dict(extra_sd)
 
             tunable_params = {
                 f"audio_head.{k}": v for k, v in self.audio_head.named_parameters()

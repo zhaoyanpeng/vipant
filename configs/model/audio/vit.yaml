@@ -1,4 +1,5 @@
 name: 'AudioHead'
+from_scratch: False
 embed_dim: ${model.image.embed_dim}
 resolution: 
 - ${running.max_audio_len}
