@@ -87,13 +87,21 @@ class Monitor(object):
 
     def summary_report(self, report):
         report = np.array(report)
+        self.echo(f"\n{report}")
         nfold, nepoch = report.shape[:2]
         self.echo(f"Total {nepoch} epochs for each of {nfold} folds.")
+
         report_sum = report.sum(0)
         best_epoch = report_sum.argmax()
         best_precisions = report[:, best_epoch]
         mean, std = best_precisions.mean(), best_precisions.std()
         self.echo(f"Best mean and std: {mean:2.2f} \\pm {std:2.2f} in the {best_epoch}th epoch.")
+
+        max_epoch = report.argmax(1)
+        max_precisions = report.max(1) #
+        #_, max_epoch = np.where(report == max_precisions[..., None])
+        mean, std = max_precisions.mean(), max_precisions.std()
+        self.echo(f"Max mean and std: {mean:2.2f} \\pm {std:2.2f} in the {max_epoch}th epoch.")
 
     def make_batch(self, batch):
         batch = (
@@ -165,7 +173,9 @@ class Monitor(object):
                     f"lr_w {lr_w:.2e} lr_b {lr_b:.2e} loss {self.total_loss / self.total_step:.3f} " + 
                     f"{self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
                 )
-            if self.total_step % self.cfg.running.save_rate == 0: # distributed eval
+            if self.total_step % self.cfg.running.save_rate == 0 or (
+                    self.cfg.running.save_epoch and self.total_step % len(self.dataloader) == 0
+                ): # distributed eval
                 report = ""
                 if self.evalloader is not None:
                     self.model.train(False)
