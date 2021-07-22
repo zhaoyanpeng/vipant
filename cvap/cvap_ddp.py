@@ -14,14 +14,12 @@ from tqdm import tqdm
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
-from .text_head import build_text_head
-from .loss_head import build_loss_head
-from .image_head import build_image_head
-from .audio_head import build_audio_head
+from .module import (
+    build_image_head, build_audio_head, build_text_head, build_loss_head
+)
 
 from .datasets import ImageAudioCollator, ImageAudioDataset, ImageAudioDatasetNpz
-from .utils import exclude_bias_or_norm, adjust_learning_rate
-from .module import LARS
+from cvap.module import LARS, exclude_bias_or_norm, adjust_learning_rate
 
 from clip import load 
 

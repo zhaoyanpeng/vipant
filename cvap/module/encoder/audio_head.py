@@ -3,6 +3,7 @@ from typing import Tuple, Union
 from fvcore.common.registry import Registry
 from omegaconf.listconfig import ListConfig
 
+import math
 import copy
 import threading
 import numpy as np
@@ -10,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .module import ModifiedResNet, VisualTransformer
+from cvap.module import ModifiedResNet, VisualTransformer
 
 AUDIO_HEADS_REGISTRY = Registry("AUDIO_HEADS")
 AUDIO_HEADS_REGISTRY.__doc__ = """
@@ -77,37 +78,45 @@ class AudioHead(nn.Module):
             pos_resolution = self.encoder.position_resolution
             old_pos_emb = state_dict["positional_embedding"]
             num_pos, pos_dim = old_pos_emb.shape[:2]
-            num_pos = int(np.sqrt(num_pos - 1))
-            ptensor = old_pos_emb[1:].reshape(
-                -1, num_pos, num_pos, pos_dim
-            ).permute(0, 3, 1, 2) 
-            new_pos_emb = F.interpolate(
-                ptensor,
-                pos_resolution,
-                mode="bilinear",
-                align_corners=False,
-            ).permute(0, 2, 3, 1).flatten(1, 2) 
-            new_pos_emb = torch.cat((
-                old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
-            ), dim=0)
+            num_pos_required = np.prod(pos_resolution)
+            if num_pos_required + 1 <= num_pos:
+                new_pos_emb = old_pos_emb[:num_pos_required + 1]
+            else:
+                num_pos = int(np.sqrt(num_pos - 1))
+                ptensor = old_pos_emb[1:].reshape(
+                    -1, num_pos, num_pos, pos_dim
+                ).permute(0, 3, 1, 2) 
+                new_pos_emb = F.interpolate(
+                    ptensor,
+                    pos_resolution,
+                    mode="bilinear",
+                    align_corners=False,
+                ).permute(0, 2, 3, 1).flatten(1, 2) 
+                new_pos_emb = torch.cat((
+                    old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
+                ), dim=0)
             old_dict["positional_embedding"] = new_pos_emb 
         else:
             pos_resolution = self.encoder.position_resolution
             old_pos_emb = state_dict["attnpool.positional_embedding"]
             num_pos, pos_dim = old_pos_emb.shape[:2]
-            num_pos = int(np.sqrt(num_pos - 1))
-            ptensor = old_pos_emb[1:].reshape(
-                -1, num_pos, num_pos, pos_dim
-            ).permute(0, 3, 1, 2) 
-            new_pos_emb = F.interpolate(
-                ptensor,
-                pos_resolution,
-                mode="bilinear",
-                align_corners=False,
-            ).permute(0, 2, 3, 1).flatten(1, 2) 
-            new_pos_emb = torch.cat((
-                old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
-            ), dim=0)
+            num_pos_required = np.prod(pos_resolution)
+            if num_pos_required + 1 <= num_pos:
+                new_pos_emb = old_pos_emb[:num_pos_required + 1]
+            else:
+                num_pos = int(np.sqrt(num_pos - 1))
+                ptensor = old_pos_emb[1:].reshape(
+                    -1, num_pos, num_pos, pos_dim
+                ).permute(0, 3, 1, 2) 
+                new_pos_emb = F.interpolate(
+                    ptensor,
+                    pos_resolution,
+                    mode="bilinear",
+                    align_corners=False,
+                ).permute(0, 2, 3, 1).flatten(1, 2) 
+                new_pos_emb = torch.cat((
+                    old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
+                ), dim=0)
             old_dict["attnpool.positional_embedding"] = new_pos_emb 
         new_dict.update(old_dict)
         self.encoder.load_state_dict(new_dict)

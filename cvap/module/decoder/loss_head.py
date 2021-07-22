@@ -12,7 +12,7 @@ import torch.distributed as dist
 from torch import nn
 
 from collections import defaultdict
-from clip import Transformer, ModifiedResNet, VisualTransformer  
+from clip import LayerNorm, Transformer, ModifiedResNet, VisualTransformer  
 
 LOSS_HEADS_REGISTRY = Registry("LOSS_HEADS")
 LOSS_HEADS_REGISTRY.__doc__ = """
@@ -215,4 +215,60 @@ class BarlowLossHead(LossHead):
         on_diag, off_diag = self.loss_fn(c)
         loss = on_diag + self.off_weight * off_diag
         return loss
+
+@LOSS_HEADS_REGISTRY.register()
+class ClassificationHead(LossHead):
+    def __init__(self, cfg, **kwargs):
+        super().__init__()
+        assert "output_dim" in kwargs, f"`the label number` is not found in `kwargs`"
+        nlabel = kwargs["output_dim"]
+        self.linear = nn.Sequential(
+            LayerNorm(cfg.embed_dim), 
+            nn.Linear(cfg.embed_dim, nlabel)
+        )  
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.loss_fn = nn.CrossEntropyLoss()
+        self.reduce = False 
+    
+    def copy_state_dict(self, state_dict): 
+        key = "logit_scale"
+        new_dict = self.state_dict()
+        new_dict.update({key: state_dict[key]})
+        self.load_state_dict(new_dict)
+
+    def infer(self, x1, x2, *args, **kwargs):
+        if not hasattr(self, "x1s") or not hasattr(self, "x2s") or not hasattr(self, "ids"): 
+            self.x1s, self.x2s, self.ids = [], [], []
+        logits_per_x1 = self.linear(x1)
+        predictions = logits_per_x1.argmax(-1) 
+        self.x1s.append(predictions)
+        self.x2s.append(x2)
+        names = kwargs.get("names", None)
+        if names is not None:
+            self.ids.extend(names)
+        return None  
+
+    def report(self, gold_file=None):
+        x1s = torch.cat(self.x1s)
+        x2s = torch.cat(self.x2s)
+        nsample = len(x1s)
+        precision = (x1s == x2s).sum() / nsample * 100.
+
+        del self.x1s, self.x2s, self.ids
+        report = (
+            f"A->T: p1 = {precision:2.2f} @ {nsample}" 
+        )
+        return report
+
+    def forward(self, x1, x2, *args, **kwargs):
+        """ x1 is the input features and x2 is the label
+        """
+        if not self.training:
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                return self.infer(x1, x2, *args, **kwargs)
+            return None 
+        logit_scale = self.logit_scale.exp()
+        logits_per_x1 = logit_scale * self.linear(x1)
+        loss_mean_x1 = self.loss_fn(logits_per_x1, x2)
+        return loss_mean_x1
 

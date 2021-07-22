@@ -1,0 +1,23 @@
+clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
+clip_model_name: "ViT-B32"
+data_root: "/home/yanpengz/data/esc50" 
+data_name: 'esc50' 
+eval_name: '' 
+test_name: '' 
+eval_samples: 5000
+test_samples: 5000
+max_audio_len: 500 
+peep_rate: 16 
+save_rate: 32 
+batch_size: 50 
+epochs: 30 
+# vision backbone
+resolution: ${model.image.resolution}
+# kaldi: audio feature extractor
+frame_length: 25
+frame_shift: 10
+window_type: hamming
+num_mel_bins: 128
+low_freq: 0.0
+high_freq: 8000
+use_log_fbank: True

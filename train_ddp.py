@@ -9,6 +9,7 @@ import torch.multiprocessing as mp
 from torch.nn import DataParallel
 from torch.nn.parallel import DistributedDataParallel
 
+from cvap.finetune import Monitor as ESCMonitor
 from cvap.cvap_dp import Monitor as DPMonitor
 from cvap.cvap_ddp import Monitor as DDPMonitor
 from cvap.utils import seed_all_rng, setup_logger
@@ -53,7 +54,10 @@ def main(cfg, rank, ddp, pg, device, manager):
 
     torch.backends.cudnn.benchmark=True
     
-    monitor = manager(cfg, logger.info, device)
+    if isinstance(manager, str):
+        monitor = eval(manager)(cfg, logger.info, device)
+    else:
+        monitor = manager(cfg, logger.info, device)
     monitor.learn()
 
 
@@ -62,7 +66,7 @@ def train(cfg: DictConfig) -> None:
     if cfg.mode == "dp":
         cfg.rank = 0
         torch.cuda.set_device(0)
-        main(cfg, 0, False, False, torch.device('cuda', 0), DPMonitor)
+        main(cfg, 0, False, False, torch.device('cuda', 0), cfg.monitor)
     elif cfg.mode == "ddp":
         try:
             mp.spawn(
