@@ -6,7 +6,6 @@ eval_name: ''
 test_name: '' 
 eval_samples: 5000
 test_samples: 5000
-max_audio_len: 400 
 peep_rate: 50 
 save_rate: 1e9 
 batch_size: 50 
@@ -14,14 +13,6 @@ epochs: 32
 save_epoch: True 
 # vision backbone
 resolution: ${model.image.resolution}
-# audio data
-freq_mask_param: 1 # no mask by default
-time_mask_param: 1
-# kaldi: audio feature extractor
-frame_length: 25
-frame_shift: 10
-window_type: hamming
-num_mel_bins: 128
-low_freq: 0.0
-high_freq: 8000
-use_log_fbank: True
+# audio backbone
+max_audio_len: ${running.audio.max_len}
+num_mel_bins: ${running.audio.num_mel_bins}

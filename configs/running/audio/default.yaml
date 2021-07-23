@@ -1,0 +1,24 @@
+# kaldi
+max_len: 500 # seq len 
+frame_length: 25
+frame_shift: 10
+window_type: hamming
+num_mel_bins: 128
+low_freq: 0.0
+high_freq: 8000
+use_log_fbank: True
+# transform of audios 
+transform_audio: True 
+audio_transforms:
+- [RandomFlip, {p: 0.5}]
+- [RandomScale, {scale: 1.5, keep_len: True}]
+- [RandomNoise, {snr_min_db: 10.0, snr_max_db: 120.0, p: 0.25}]
+audio_scale: True
+audio_flip: True
+audio_noise: True
+# transform of fbanks 
+transform_fbank: True 
+fbank_transforms:
+- [SimpleRandomNoise, []]
+- [FrequencyMasking, [25]]
+- [TimeMasking, [100]]

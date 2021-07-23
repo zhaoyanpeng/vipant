@@ -15,10 +15,12 @@ import multiprocessing as mp
 import torch.utils.data as data
 import torch.nn.functional as F
 
-from torchvision.transforms import Compose, ToTensor
+from .transform import make_transform
 
-def _extract_kaldi_spectrogram(filename, params, max_audio_len=1000):
+def _extract_kaldi_spectrogram(filename, params, max_audio_len=1000, transform_audio=None):
     waveform, sample_rate = torchaudio.load(f"{filename}")
+    if transform_audio is not None:
+        waveform = transform_audio(waveform) 
     fbank_feat = torchaudio.compliance.kaldi.fbank(
         waveform,
         sample_frequency=sample_rate,
@@ -39,23 +41,17 @@ class ImageAudioDatasetSrc(data.Dataset):
         self.length = len(self.dataset)
         self.train = train
         self.cfg = cfg
-
-        self.transform = Compose([
-            lambda x: x.T,
-            ToTensor(), # will add a new dim 0 
-            torchaudio.transforms.FrequencyMasking(cfg.freq_mask_param),
-            torchaudio.transforms.TimeMasking(cfg.time_mask_param),
-            lambda x: x.squeeze(0).T,
-        ]) # return Tensor or .numpy() if numpy.array is wanted
         
+        acfg = cfg.audio
+        self.transform_audio, self.transform_fbank = make_transform(acfg)        
         self.kaldi_params = {
-            "use_log_fbank": cfg.use_log_fbank,
-            "frame_length": cfg.frame_length,
-            "frame_shift": cfg.frame_shift,
-            "window_type": cfg.window_type,
-            "num_mel_bins": cfg.num_mel_bins,
-            "high_freq": cfg.high_freq,
-            "low_freq": cfg.low_freq,
+            "use_log_fbank": acfg.use_log_fbank,
+            "frame_length": acfg.frame_length,
+            "frame_shift": acfg.frame_shift,
+            "window_type": acfg.window_type,
+            "num_mel_bins": acfg.num_mel_bins,
+            "high_freq": acfg.high_freq,
+            "low_freq": acfg.low_freq,
         }
 
     def _shuffle(self):
@@ -70,14 +66,15 @@ class ImageAudioDatasetSrc(data.Dataset):
 
         max_audio_len = self.cfg.max_audio_len
         audio = _extract_kaldi_spectrogram(
-            aclip_file, self.kaldi_params, max_audio_len=max_audio_len
+            aclip_file, self.kaldi_params, max_audio_len=max_audio_len,
+            transform_audio=(self.transform_audio if self.train else None)
         ) # (..., time, freq)
         
-        if self.train and (self.cfg.freq_mask_param > 1 or self.cfg.time_mask_param > 1): # data augmentation
-            audio = self.transform(audio)
+        if self.train and self.transform_fbank is not None:
+            audio = self.transform_fbank(audio)
 
         npad =  self.cfg.max_audio_len - audio.shape[0]
-        if npad > 0:
+        if npad > 0: # always pad to the right
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
         
         audio = audio[None]

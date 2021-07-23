@@ -16,7 +16,7 @@ import torch.distributed as dist
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
-from .dataset.esc50 import build_dataloader_list, build_dataloader
+from .dataset.audio import build_dataloader_list
 from .audio_classifier import AudioClassifier as Model
 from cvap.module import LARS, exclude_bias_or_norm, adjust_learning_rate
 
