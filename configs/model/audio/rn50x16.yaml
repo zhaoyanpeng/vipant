@@ -5,5 +5,5 @@ embed_dim: ${model.image.embed_dim}
 resolution: 
 - ${running.max_audio_len}
 - 128 
-width: ${model.image.width}
+width: ${model.image.width} 
 layers: ${model.image.layers}

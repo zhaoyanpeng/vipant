@@ -1,0 +1,9 @@
+name: 'ImageHead'
+embed_dim: 768 
+resolution: 384 
+width: 96 
+layers:
+- 6 
+- 8 
+- 18
+- 8 

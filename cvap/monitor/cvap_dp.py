@@ -8,6 +8,7 @@ import numpy as np
 from torch import nn
 
 import torch.distributed as dist
+import torch.nn.functional as F
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
@@ -71,14 +72,17 @@ class Monitor(object):
             self.epoch(iepoch)
 
     def make_batch(self, batch):
+        images = torch.tensor(batch[0], device=self.device) # (c, h, w)
+        audios = torch.tensor(batch[1], device=self.device).unsqueeze(1),
+        if images.shape[-1] != self.cfg.running.resolution:
+            images = F.interpolate(
+                images,
+                self.cfg.running.resolution,
+                mode="bilinear",
+                align_corners=False,
+            )
         batch = (
-            torch.tensor(
-                batch[0], device=self.device
-            ), 
-            torch.tensor(
-                batch[1], device=self.device
-            ).unsqueeze(1),
-            batch[2], # sample id or name
+            images, audios, batch[2], # sample id or name
         )
         return batch # bare tensors
 
