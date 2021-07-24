@@ -1,8 +1,8 @@
 import os
-import math
-import random
 import logging
-import numpy, torch
+import random
+import numpy
+import torch
 import torch.distributed as dist
 
 def seed_all_rng(seed):

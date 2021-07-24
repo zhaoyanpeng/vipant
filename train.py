@@ -2,9 +2,8 @@ from omegaconf import DictConfig, OmegaConf
 import torch
 import hydra
 
-from cvap.cvap import Monitor
-from cvap.utils import seed_all_rng, setup_logger
-
+from cvap.monitor.cvap import Monitor
+from cvap.util import seed_all_rng, setup_logger
 
 @hydra.main(config_path="configs", config_name="default")
 def train(cfg: DictConfig) -> None:

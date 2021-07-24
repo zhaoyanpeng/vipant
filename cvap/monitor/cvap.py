@@ -10,12 +10,11 @@ from torch import nn
 from PIL import Image
 from tqdm import tqdm
 
-from .text_head import build_text_head
-from .loss_head import build_loss_head
-from .image_head import build_image_head
-from .audio_head import build_audio_head
+from ..module import (
+    build_image_head, build_audio_head, build_text_head, build_loss_head
+)
 
-from .datasets import PairImageSpectrogramTFRecords
+from ..dataset import PairImageSpectrogramTFRecords
 
 from clip import load 
 

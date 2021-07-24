@@ -145,10 +145,13 @@ class LossHead(nn.Module):
             # x2 -> x1
             stats_21 = topk_overlap(ind_21, k=1) 
             msg_21 = pnr(stats_21, k=1, msg="A->I")
+        else:
+            msg_12 = msg_21 = ""
 
         del self.x1s, self.x2s, self.ids
+        msg = "" if msg_12 == msg_21 == "" else f"\n{msg_12} {msg_21}\n"
         report = (
-            f"\n{msg_12} {msg_21}\n" +
+            f"{msg}" +
             f"I->A: t1 = {t12_1:2.2f} t5 = {t12_5:2.2f} " + 
             f"A->I: t1 = {t21_1:2.2f} t5 = {t21_5:2.2f} @ {nsample}" 
         )

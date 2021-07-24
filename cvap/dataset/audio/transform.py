@@ -157,7 +157,7 @@ class RandomNoise(AbstractTransform):
         x_db = 10 * torch.log10(x_watts)
 
         noise_db = x_db - target_snr
-        noise_watts = 10 ** (noise_db / 10)
+        noise_watts = 10 ** (noise_db / 10) + 1e-7
         noise = torch.normal(0.0, noise_watts.item() ** 0.5, x.shape)
 
         noise_x = x + noise

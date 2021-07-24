@@ -16,9 +16,9 @@ import torch.distributed as dist
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
-from .dataset.audio import build_dataloader_list
-from .audio_classifier import AudioClassifier as Model
-from cvap.module import LARS, exclude_bias_or_norm, adjust_learning_rate
+from ..model import AudioClassifier as Model
+from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
+from ..dataset.audio import build_dataloader_list
 
 class Monitor(object):
     def __init__(self, cfg, echo, device):

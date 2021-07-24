@@ -1,6 +1,5 @@
 import os, csv, json
 import numpy as np
-from cvap.datasets import PairImageSpectrogramTFRecords
 from omegaconf import DictConfig, OmegaConf
 import hydra
 
@@ -8,7 +7,8 @@ import torchaudio
 from torchvision.transforms import InterpolationMode, Compose, Resize, CenterCrop, ToTensor, Normalize
 from PIL import Image as PILImage
 
-from cvap.utils import seed_all_rng
+from cvap.dataset import PairImageSpectrogramTFRecords
+from cvap.util import seed_all_rng
 
 
 # helpers

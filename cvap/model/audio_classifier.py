@@ -18,7 +18,7 @@ from torch.nn.parallel import DistributedDataParallel
 
 from clip import load 
 
-from .module import (
+from ..module import (
     build_image_head, build_audio_head, build_text_head, build_loss_head
 )
 
