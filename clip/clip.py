@@ -168,7 +168,7 @@ def load(
     return model, _transform(model.input_resolution.item())
 
 
-def tokenize(texts: Union[str, List[str]], context_length: int = 77) -> torch.LongTensor:
+def tokenize(texts: Union[str, List[str]], context_length: int = 77, as_list=False) -> torch.LongTensor:
     """
     Returns the tokenized representation of given input string(s)
 
@@ -190,6 +190,8 @@ def tokenize(texts: Union[str, List[str]], context_length: int = 77) -> torch.Lo
     sot_token = _tokenizer.encoder["<|startoftext|>"]
     eot_token = _tokenizer.encoder["<|endoftext|>"]
     all_tokens = [[sot_token] + _tokenizer.encode(text) + [eot_token] for text in texts]
+    if as_list:
+        return all_tokens
     result = torch.zeros(len(all_tokens), context_length, dtype=torch.long)
 
     for i, tokens in enumerate(all_tokens):

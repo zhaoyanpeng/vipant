@@ -1,5 +1,5 @@
 # kaldi
-max_len: 500 # seq len 
+max_len: 1000 # seq len 
 frame_length: 25
 frame_shift: 10
 window_type: hamming

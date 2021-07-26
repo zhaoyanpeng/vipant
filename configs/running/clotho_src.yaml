@@ -1,0 +1,18 @@
+clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
+clip_model_name: "ViT-B32"
+data_root: "/home/yanpengz/data/clotho"
+data_name: 'clotho_captions_development' 
+eval_name: 'clotho_captions_validation'
+test_name: 'clotho_captions_evaluation' 
+eval_samples: 5000
+test_samples: 5000
+peep_rate: 16 
+save_rate: 32 
+batch_size: 50 
+epochs: 32
+save_epoch: False
+# vision backbone
+resolution: ${model.image.resolution}
+# audio backbone
+max_audio_len: ${running.audio.max_len}
+num_mel_bins: ${running.audio.num_mel_bins}

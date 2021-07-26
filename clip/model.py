@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-__all__ = ["Transformer", "ModifiedResNet", "VisualTransformer", "LayerNorm", "Bottleneck"]
+__all__ = ["Transformer", "ModifiedResNet", "VisualTransformer", "LayerNorm", "Bottleneck", "QuickGELU"]
 
 class Bottleneck(nn.Module):
     expansion = 4

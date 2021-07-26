@@ -66,23 +66,64 @@ class LossHead(nn.Module):
     def report(self, gold_file=None):
         x1s = torch.cat(self.x1s)
         x2s = torch.cat(self.x2s)
-        nsample = x1s.shape[0]
-        labels = torch.arange(nsample, device=x1s.device).unsqueeze(-1)
-        # x1 -> x2
-        x12 = x1s @ x2s.t()
-        ind_12 = x12.argsort(descending=True)
-        r12 = torch.where(ind_12 == labels)[1]
-        
-        t12_1 = torch.where(r12 < 1)[0].shape[0] / nsample * 100. 
-        t12_5 = torch.where(r12 < 5)[0].shape[0] / nsample * 100. 
+        if x1s.shape[0] == x2s.shape[0]:
+            nsample = x1s.shape[0]
+            labels = torch.arange(nsample, device=x1s.device).unsqueeze(-1)
+            # x1 -> x2
+            x12 = x1s @ x2s.t()
+            ind_12 = x12.argsort(descending=True)
+            r12 = torch.where(ind_12 == labels)[1]
+            
+            t12_1 = torch.where(r12 < 1)[0].shape[0] / nsample * 100. 
+            t12_5 = torch.where(r12 < 5)[0].shape[0] / nsample * 100. 
 
-        # x2 -> x1
-        x21 = x2s @ x1s.t()
-        ind_21 = x21.argsort(descending=True)
-        r21 = torch.where(ind_21 == labels)[1]
+            p_12 = f"I->A: t1 = {t12_1:2.2f} t5 = {t12_5:2.2f}" 
 
-        t21_1 = torch.where(r21 < 1)[0].shape[0] / nsample * 100. 
-        t21_5 = torch.where(r21 < 5)[0].shape[0] / nsample * 100. 
+            # x2 -> x1
+            x21 = x2s @ x1s.t()
+            ind_21 = x21.argsort(descending=True)
+            r21 = torch.where(ind_21 == labels)[1]
+
+            t21_1 = torch.where(r21 < 1)[0].shape[0] / nsample * 100. 
+            t21_5 = torch.where(r21 < 5)[0].shape[0] / nsample * 100. 
+
+            p_21 = f"A->I: t1 = {t21_1:2.2f} t5 = {t21_5:2.2f}" 
+        elif x1s.shape[0] * 5 == x2s.shape[0]:
+            # x1 -> x2: 1 v 5 
+            nsample = x2s.shape[0]
+            labels = torch.arange(nsample, device=x2s.device).unsqueeze(-1)
+
+            x12 = x1s @ x2s.t()
+            ind_12 = x12.argsort(descending=True) 
+            ind_12 = ind_12.repeat_interleave(5, dim=0)
+            r12 = torch.where(ind_12 == labels)[1]
+
+            r12 = r12.reshape(-1, 5) # 1 x 5
+
+            t12_1 = (r12 < 1).sum(-1).sum() / (1 * r12.shape[0]) * 100. # P@1 
+            t12_5 = (r12 < 5).sum(-1).sum() / (5 * r12.shape[0]) * 100. # R@5 == P@5 
+
+            mean = r12.min(-1)[0].float().mean() + 1
+
+            p_12 = f"A->T: t1 = {t12_1:2.2f} t5 = {t12_5:2.2f} mR = {mean:2.2f}" 
+
+            # x2 -> x1: 5 v 1
+            nsample = x1s.shape[0]
+            labels = torch.arange(nsample, device=x1s.device).unsqueeze(-1)
+            labels = labels.repeat(1, 5).view(-1, 1)
+
+            x21 = x2s @ x1s.t()
+            ind_21 = x21.argsort(descending=True)
+            r21 = torch.where(ind_21 == labels)[1]
+
+            t21_1 = torch.where(r21 < 1)[0].shape[0] / r21.shape[0] * 100. # P@1 
+            t21_5 = torch.where(r21 < 5)[0].shape[0] / r21.shape[0] * 100. # R@5 
+            
+            mean = r21.float().mean() + 1
+
+            p_21 = f"T->A: t1 = {t21_1:2.2f} t5 = {t21_5:2.2f} mR = {mean:2.2f}" 
+        else:
+            p_12, p_21 = f"{x1s.shape}x{x2s.shape}", "-"
 
         # stats per class
         if gold_file is not None:
@@ -150,11 +191,7 @@ class LossHead(nn.Module):
 
         del self.x1s, self.x2s, self.ids
         msg = "" if msg_12 == msg_21 == "" else f"\n{msg_12} {msg_21}\n"
-        report = (
-            f"{msg}" +
-            f"I->A: t1 = {t12_1:2.2f} t5 = {t12_5:2.2f} " + 
-            f"A->I: t1 = {t21_1:2.2f} t5 = {t21_5:2.2f} @ {nsample}" 
-        )
+        report = f"{msg}{p_12} {p_21} @ {x1s.shape[0]}"
         return report
 
 @LOSS_HEADS_REGISTRY.register()

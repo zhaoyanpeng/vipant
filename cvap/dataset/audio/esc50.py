@@ -15,12 +15,19 @@ import multiprocessing as mp
 import torch.utils.data as data
 import torch.nn.functional as F
 
-from .transform import make_transform
+from .transform import make_transform, RandomCrop
 
-def _extract_kaldi_spectrogram(filename, params, max_audio_len=1000, transform_audio=None):
+def _extract_kaldi_spectrogram(
+    filename, params, train=True, mean=False, max_audio_len=1000, transform_audio=None
+):
     waveform, sample_rate = torchaudio.load(f"{filename}")
+    if mean: # mean along channel
+        waveform = waveform.mean(0, keepdim=True)
     if transform_audio is not None:
         waveform = transform_audio(waveform) 
+    waveform = RandomCrop.random_crop(
+        waveform, int((max_audio_len / 100 + 0.05) * sample_rate), train=train
+    ) # divided by 100 because kaldi has a frame shift of 10, additional 0.05s
     fbank_feat = torchaudio.compliance.kaldi.fbank(
         waveform,
         sample_frequency=sample_rate,
@@ -66,7 +73,10 @@ class ImageAudioDatasetSrc(data.Dataset):
 
         max_audio_len = self.cfg.max_audio_len
         audio = _extract_kaldi_spectrogram(
-            aclip_file, self.kaldi_params, max_audio_len=max_audio_len,
+            aclip_file, 
+            self.kaldi_params, 
+            train=self.train,
+            max_audio_len=max_audio_len,
             transform_audio=(self.transform_audio if self.train else None)
         ) # (..., time, freq)
         
