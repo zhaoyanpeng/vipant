@@ -80,6 +80,7 @@ class ModifiedResNet(nn.Module):
 
         embed_dim = width * 32  # the ResNet feature dimension
         self.attnpool = AttentionPool2d(positions, embed_dim, heads, output_dim)
+        self.initialize_parameters()
 
     def _make_layer(self, planes, blocks, stride=1):
         layers = [Bottleneck(self._inplanes, planes, stride)]
@@ -90,6 +91,22 @@ class ModifiedResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
+    def initialize_parameters(self):
+        std = self.attnpool.c_proj.in_features ** -0.5
+        nn.init.normal_(self.attnpool.q_proj.weight, std=std)
+        nn.init.normal_(self.attnpool.k_proj.weight, std=std)
+        nn.init.normal_(self.attnpool.v_proj.weight, std=std)
+        nn.init.normal_(self.attnpool.c_proj.weight, std=std)
+
+        for resnet_block in [self.layer1, self.layer2, self.layer3, self.layer4]:
+            for name, param in resnet_block.named_parameters():
+                if name.endswith("bn3.weight"):
+                    nn.init.zeros_(param)
+
+    @property
+    def dtype(self):
+        return self.conv1.weight.dtype
+
     def forward(self, x):
         def stem(x):
             for conv, bn in [(self.conv1, self.bn1), (self.conv2, self.bn2), (self.conv3, self.bn3)]:
@@ -97,7 +114,7 @@ class ModifiedResNet(nn.Module):
             x = self.avgpool(x)
             return x
 
-        x = x.type(self.conv1.weight.dtype)
+        x = x.type(self.dtype)
         x = stem(x)
         x = self.layer1(x)
         x = self.layer2(x)

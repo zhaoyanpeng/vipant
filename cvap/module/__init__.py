@@ -1,6 +1,7 @@
-from .vit import VisualTransformer
-from .resnet import ModifiedResNet
 from .transformer import Transformer
+from .vit import VisualTransformer
+from .txt import TextualTransformer
+from .resnet import ModifiedResNet
 
 from .lars import * 
 

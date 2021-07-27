@@ -43,31 +43,12 @@ class ImageHead(nn.Module):
                 width=cfg.width,
                 heads=heads,
             )
-        self.initialize_parameters()
-
-    def initialize_parameters(self):
-        if isinstance(self.encoder, ModifiedResNet):
-            if self.encoder.attnpool is not None:
-                std = self.encoder.attnpool.c_proj.in_features ** -0.5
-                nn.init.normal_(self.encoder.attnpool.q_proj.weight, std=std)
-                nn.init.normal_(self.encoder.attnpool.k_proj.weight, std=std)
-                nn.init.normal_(self.encoder.attnpool.v_proj.weight, std=std)
-                nn.init.normal_(self.encoder.attnpool.c_proj.weight, std=std)
-
-            for resnet_block in [self.encoder.layer1, self.encoder.layer2, self.encoder.layer3, self.encoder.layer4]:
-                for name, param in resnet_block.named_parameters():
-                    if name.endswith("bn3.weight"):
-                        nn.init.zeros_(param)
-
-    @property
-    def dtype(self):
-        return self.encoder.conv1.weight.dtype
 
     def copy_state_dict(self, state_dict): 
         self.encoder.load_state_dict(state_dict) 
 
     def forward(self, images, *args, **kwargs):
-        z = self.encoder(images.type(self.dtype))
+        z = self.encoder(images)
         if kwargs.get("normalized", False):
             z = z / z.norm(dim=-1, keepdim=True)
             #print(f"{threading.current_thread().ident} image --{kwargs.get('normalized', False)}")

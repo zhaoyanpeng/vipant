@@ -82,7 +82,7 @@ class AudioClassifier(nn.Module):
                 for k, v in model.state_dict().items():
                     if k.startswith("visual") or k == "logit_scale":
                         continue
-                    k = re.sub("^transformer\.", "encoder.", k)
+                    #k = re.sub("^transformer\.", "encoder.", k)
                     text_head_sd[k] = v
                 from_scratch = False
             except Exception as e:

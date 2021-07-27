@@ -47,25 +47,6 @@ class AudioHead(nn.Module):
                 width=cfg.width,
                 heads=heads,
             )
-        self.initialize_parameters()
-
-    def initialize_parameters(self):
-        if isinstance(self.encoder, ModifiedResNet):
-            if self.encoder.attnpool is not None:
-                std = self.encoder.attnpool.c_proj.in_features ** -0.5
-                nn.init.normal_(self.encoder.attnpool.q_proj.weight, std=std)
-                nn.init.normal_(self.encoder.attnpool.k_proj.weight, std=std)
-                nn.init.normal_(self.encoder.attnpool.v_proj.weight, std=std)
-                nn.init.normal_(self.encoder.attnpool.c_proj.weight, std=std)
-
-            for resnet_block in [self.encoder.layer1, self.encoder.layer2, self.encoder.layer3, self.encoder.layer4]:
-                for name, param in resnet_block.named_parameters():
-                    if name.endswith("bn3.weight"):
-                        nn.init.zeros_(param)
-
-    @property
-    def dtype(self):
-        return self.encoder.conv1.weight.dtype
 
     def copy_state_dict(self, state_dict): 
         excluded = ["conv1.weight", "positional_embedding", "attnpool.positional_embedding"]
@@ -122,7 +103,7 @@ class AudioHead(nn.Module):
         self.encoder.load_state_dict(new_dict)
 
     def forward(self, audios, *args, **kwargs):
-        z = self.encoder(audios.type(self.dtype))
+        z = self.encoder(audios)
         if kwargs.get("normalized", False):
             z = z / z.norm(dim=-1, keepdim=True)
             #print(f"{threading.current_thread().ident} audio --{kwargs.get('normalized', False)}")
