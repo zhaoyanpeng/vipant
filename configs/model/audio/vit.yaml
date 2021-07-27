@@ -7,5 +7,5 @@ resolution:
 - ${running.num_mel_bins} 
 patch_size: ${model.image.patch_size}
 width: 768 
-stride: 16 
+stride: [16, 16] 
 layers: 12

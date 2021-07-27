@@ -1,4 +1,6 @@
 name: 'ImageHead'
+freeze: True 
+from_scratch: False
 embed_dim: 640 
 resolution: 288 
 width: 80 

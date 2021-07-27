@@ -87,7 +87,7 @@ class CVAPDP(nn.Module):
                 self.echo(f"Will learn from scratch because: {e}") 
                 from_scratch = True
             self.image_head = build_image_head(self.cfg.model.image)
-            if not from_scratch:
+            if not from_scratch and not self.cfg.model.image.from_scratch:
                 self.image_head.copy_state_dict(image_head_sd)
                 self.echo("Initialize image encoder from `image_head`.")
 
@@ -107,6 +107,12 @@ class CVAPDP(nn.Module):
             tunable_params.update({
                 f"loss_head.{k}": v for k, v in self.loss_head.named_parameters()
             })
+            if not self.cfg.model.image.freeze:
+                tunable_params.update({
+                    f"image_head.{k}": v for k, v in self.image_head.named_parameters()
+                })
+            else:
+                self.echo("Freeze image encoder.")
             self.cuda(self.cfg.rank)
         return tunable_params
 
