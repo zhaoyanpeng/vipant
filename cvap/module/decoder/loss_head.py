@@ -277,8 +277,10 @@ class ClassificationHead(LossHead):
         self.load_state_dict(new_dict)
 
     def infer(self, x1, x2, *args, **kwargs):
-        if not hasattr(self, "x1s") or not hasattr(self, "x2s") or not hasattr(self, "ids"): 
-            self.x1s, self.x2s, self.ids = [], [], []
+        if not hasattr(self, "audios") or not hasattr(self, "x1s") or \
+            not hasattr(self, "x2s") or not hasattr(self, "ids"): 
+            self.audios, self.x1s, self.x2s, self.ids = [], [], [], []
+        self.audios.append(x1)
         logits_per_x1 = self.linear(x1)
         predictions = logits_per_x1.argmax(-1) 
         self.x1s.append(predictions)
@@ -286,15 +288,30 @@ class ClassificationHead(LossHead):
         names = kwargs.get("names", None)
         if names is not None:
             self.ids.extend(names)
-        return None  
+        return None 
 
-    def report(self, gold_file=None):
+    def report(self, gold_file=None, **kwargs):
         x1s = torch.cat(self.x1s)
         x2s = torch.cat(self.x2s)
         nsample = len(x1s)
         precision = (x1s == x2s).sum() / nsample * 100.
 
-        del self.x1s, self.x2s, self.ids
+        # zero-shot classification
+        text = kwargs.get("text", None)
+        if text is not None:
+            audios = torch.cat(self.audios)
+            labels = torch.cat(self.x2s).unsqueeze(-1)
+            # audio -> label 
+            x12 = audios @ text.t()
+            ind_12 = x12.argsort(descending=True)
+            r12 = torch.where(ind_12 == labels)[1]
+            
+            t12_1 = (r12 < 1).sum() / r12.shape[0] * 100. 
+            precision = t12_1
+        else:
+            pass #text = ""
+
+        del self.audios, self.x1s, self.x2s, self.ids
         report = (
             f"A->T: p1 = {precision:2.2f} @ {nsample}" 
         )

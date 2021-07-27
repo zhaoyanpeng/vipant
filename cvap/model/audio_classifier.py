@@ -38,6 +38,13 @@ class AudioClassifier(nn.Module):
         )
         loss = self.loss_head(audio_features, labels, **kwargs)
         return loss     
+    
+    def encode_text(self, text, *args, **kwargs):
+        device_ids = kwargs.get("device_ids", [0])
+        text_features = data_parallel(
+            self.text_head, text, device_ids=device_ids
+        )
+        return text_features
 
     def collect_audio_state_dict(self):
         return (
@@ -45,9 +52,9 @@ class AudioClassifier(nn.Module):
             self.loss_head.state_dict(),
         )
 
-    def report(self, gold_file=None):
+    def report(self, gold_file=None, **kwargs):
         if not dist.is_initialized() or dist.get_rank() == 0:
-            return self.loss_head.report(gold_file=gold_file)
+            return self.loss_head.report(gold_file=gold_file, **kwargs)
         else:
             return ""
     
@@ -64,35 +71,47 @@ class AudioClassifier(nn.Module):
             #self.echo(f"Old configs:\n\n{local_str}")
             audio_head_sd, loss_head_sd = checkpoint["model"]
             return local_cfg, audio_head_sd, loss_head_sd 
+        def load_clip(local_cfg):
+            try: # try image / text backbone
+                rcfg = self.cfg.running
+                model, self.T = load(
+                    rcfg.clip_model_name, rcfg.clip_model_root, device="cpu", jit=False
+                )
+                image_head_sd = model.visual.state_dict() if local_cfg is None else None
+                text_head_sd = OrderedDict()
+                for k, v in model.state_dict().items():
+                    if k.startswith("visual") or k == "logit_scale":
+                        continue
+                    k = re.sub("^transformer\.", "encoder.", k)
+                    text_head_sd[k] = v
+                from_scratch = False
+            except Exception as e:
+                self.echo(f"Will learn from scratch because: {e}") 
+                self.T = image_head_sd = text_head_sd = None 
+                from_scratch = True
+            return from_scratch, image_head_sd, text_head_sd, model 
 
         if self.cfg.eval:
             local_cfg, audio_head_sd, loss_head_sd = load_checkpoint()
-
-            self.audio_head = build_audio_head(local_cfg.model.audio, **kwargs)
+            from_scratch, _, text_head_sd, _ = load_clip(local_cfg) 
+            
+            self.audio_head = build_audio_head(local_cfg.model.audio)
             self.audio_head.load_state_dict(audio_head_sd)
 
-            self.loss_head = build_loss_head(local_cfg.model.loss, **kwargs)
-            self.loss_head.load_state_dict(loss_head_sd)
+            self.text_head = build_text_head(self.cfg.model.text) #
+            self.text_head.copy_state_dict(text_head_sd)
+
+            self.loss_head = build_loss_head(self.cfg.model.loss, **kwargs)
 
             self.cuda(self.cfg.rank) 
         else:
             # try pre-trained model
             local_cfg, audio_head_sd, loss_head_sd = load_checkpoint()
             if local_cfg is None: # try image backbone
-                rcfg = self.cfg.running
-                try:
-                    model, self.T = load(
-                        rcfg.clip_model_name, rcfg.clip_model_root, device="cpu", jit=False
-                    )
-                    image_head_sd = model.visual.state_dict()
-                    from_scratch = False
-                except Exception as e:
-                    self.echo(f"Will learn from scratch because: {e}") 
-                    image_head_sd = None 
-                    from_scratch = True
+                from_scratch, image_head_sd, _, _ = load_clip(local_cfg) 
             
             #cfg = local_cfg if local_cfg is not None else self.cfg
-            self.audio_head = build_audio_head(self.cfg.model.audio, **kwargs)
+            self.audio_head = build_audio_head(self.cfg.model.audio)
             if not self.cfg.model.audio.from_scratch:
                 if local_cfg is not None:
                     if (list(audio_head_sd.keys())[0]).startswith("encoder."):

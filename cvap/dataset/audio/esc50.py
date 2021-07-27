@@ -3,6 +3,7 @@ import copy
 import glob
 import json
 import torch
+import itertools
 import torchaudio
 import numpy as np
 import tensorflow as tf
@@ -15,6 +16,7 @@ import multiprocessing as mp
 import torch.utils.data as data
 import torch.nn.functional as F
 
+from clip import tokenize
 from .transform import make_transform, RandomCrop
 
 def _extract_kaldi_spectrogram(
@@ -154,7 +156,7 @@ def build_dataloader_list_esc50(cfg):
             "label_str": category
         } 
         folds[int(fold) - 1].append(item)
-        lid2str[target] = category
+        lid2str[int(target)] = category
     
     loader_tuple = tuple()
     for i in range(nfold):
@@ -170,7 +172,10 @@ def build_dataloader_list_esc50(cfg):
             lambda data_list=train_list: build_dataloader(cfg, data_list),
             lambda data_list=eval_list: build_dataloader(cfg, data_list, shuffle=False, train=False)
         ),)
-    return loader_tuple, lid2str 
+    lid2int = [lid2str[i].replace("_", " ") for i in range(len(lid2str))]
+    lid2int = tokenize(lid2int, as_list=True)
+    lid2int = np.array(list(itertools.zip_longest(*lid2int, fillvalue=0))).T
+    return loader_tuple, lid2str, lid2int
 
 def build_dataloader_list_us8k(cfg):
     rcfg = cfg.running
@@ -188,7 +193,7 @@ def build_dataloader_list_us8k(cfg):
             "label_str": category
         } 
         folds[int(fold) - 1].append(item)
-        lid2str[target] = category
+        lid2str[int(target)] = category
     
     loader_tuple = tuple()
     for i in range(nfold):
@@ -204,7 +209,10 @@ def build_dataloader_list_us8k(cfg):
             lambda data_list=train_list: build_dataloader(cfg, data_list),
             lambda data_list=eval_list: build_dataloader(cfg, data_list, shuffle=False, train=False)
         ),)
-    return loader_tuple, lid2str 
+    lid2int = [lid2str[i].replace("_", " ") for i in range(len(lid2str))]
+    lid2int = tokenize(lid2int, as_list=True)
+    lid2int = np.array(list(itertools.zip_longest(*lid2int, fillvalue=0))).T
+    return loader_tuple, lid2str, lid2int
 
 def build_dataloader_list(cfg):
     if cfg.running.data_name == "esc50":

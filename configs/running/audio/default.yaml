@@ -8,7 +8,7 @@ low_freq: 0.0
 high_freq: 8000
 use_log_fbank: True
 # transform of audios 
-transform_audio: True 
+transform_audio: False
 audio_transforms:
 - [RandomFlip, {p: 0.5}]
 - [RandomScale, {scale: 1.5, keep_len: True}]
