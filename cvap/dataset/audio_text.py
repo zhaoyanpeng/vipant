@@ -114,6 +114,7 @@ class AudioTextCollator:
             name = list(itertools.chain.from_iterable(name))
         else:
             raise ValueError(f"unrecognized `{type(text_list[0][0])}`")
+        # https://stackoverflow.com/a/38619333
         text = np.array(list(itertools.zip_longest(*text_list, fillvalue=0))).T
         return (
             np.concatenate(union["audio"], axis=0),

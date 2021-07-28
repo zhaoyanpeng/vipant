@@ -1,4 +1,5 @@
 import os
+import re
 import copy
 import glob
 import json
@@ -172,10 +173,26 @@ def build_dataloader_list_esc50(cfg):
             lambda data_list=train_list: build_dataloader(cfg, data_list),
             lambda data_list=eval_list: build_dataloader(cfg, data_list, shuffle=False, train=False)
         ),)
-    lid2int = [lid2str[i].replace("_", " ") for i in range(len(lid2str))]
+
+    label_path = f"{rcfg.data_root}/meta/{rcfg.label_map}.json"
+    if not os.path.isfile(label_path):
+        prompt = rcfg.label_map.strip()
+        lid2int = [prompt + " " + lid2str[i].replace("_", " ") for i in range(len(lid2str))]
+        label_map = {i: i for i in range(len(lid2str))}
+    else:
+        topk = 4 
+        label_map = json.load(open(label_path, "r"))
+        text_list = [
+            label_map[lid2str[i].replace("_", " ")][:topk] for i in range(len(lid2str))
+        ]
+        lid2int = list(itertools.chain.from_iterable(text_list))
+        lid2int = [re.sub("^a photo of", "the sound of", text) for text in lid2int]
+        assert len(lid2int) == len(text_list) * topk, f"unbalanced label mapping: {len(text_list)}x{topk} -> {len(lid2int)}"
+        label_map = {i: i // topk for i in range(len(lid2str) * topk)}
+    print(lid2int)
     lid2int = tokenize(lid2int, as_list=True)
     lid2int = np.array(list(itertools.zip_longest(*lid2int, fillvalue=0))).T
-    return loader_tuple, lid2str, lid2int
+    return loader_tuple, lid2str, lid2int, label_map
 
 def build_dataloader_list_us8k(cfg):
     rcfg = cfg.running
@@ -212,7 +229,7 @@ def build_dataloader_list_us8k(cfg):
     lid2int = [lid2str[i].replace("_", " ") for i in range(len(lid2str))]
     lid2int = tokenize(lid2int, as_list=True)
     lid2int = np.array(list(itertools.zip_longest(*lid2int, fillvalue=0))).T
-    return loader_tuple, lid2str, lid2int
+    return loader_tuple, lid2str, lid2int, None
 
 def build_dataloader_list(cfg):
     if cfg.running.data_name == "esc50":

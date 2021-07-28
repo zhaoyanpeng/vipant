@@ -1,6 +1,7 @@
 clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
 clip_model_name: "ViT-B32"
 data_root: "/home/yanpengz/data/esc50" 
+label_map: "the sound of " #"label_map"
 data_name: 'esc50' 
 eval_name: '' 
 test_name: '' 

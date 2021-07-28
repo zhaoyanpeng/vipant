@@ -304,9 +304,23 @@ class ClassificationHead(LossHead):
             # audio -> label 
             x12 = audios @ text.t()
             ind_12 = x12.argsort(descending=True)
-            r12 = torch.where(ind_12 == labels)[1]
-            
-            t12_1 = (r12 < 1).sum() / r12.shape[0] * 100. 
+
+            # top-1 prediction
+            predictions = ind_12[:, :1]
+            label_map = kwargs.get("label_map", None)
+            if isinstance(label_map, dict):
+                mapped_predictions = [
+                    label_map[x] for x in predictions.flatten().tolist()
+                ]
+                predictions = torch.tensor(
+                    mapped_predictions, device=predictions.device
+                ).view(predictions.shape)
+
+            t12_1 = (predictions == labels).sum() / x1s.shape[0] * 100.
+
+            #r12 = torch.where(ind_12 == labels)[1]
+            #t12_1 = (r12 < 1).sum() / r12.shape[0] * 100.
+
             precision = t12_1
         else:
             pass #text = ""

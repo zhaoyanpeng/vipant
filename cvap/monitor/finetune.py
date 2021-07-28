@@ -47,7 +47,7 @@ class Monitor(object):
         self.build_optimizer(tunable_params)
 
     def build_data(self):
-        self.loader_list, self.lid2str, self.lid2int = build_dataloader_list(self.cfg)
+        self.loader_list, self.lid2str, self.lid2int, self.label_map = build_dataloader_list(self.cfg)
         return len(self.lid2str)
         
     def learn(self):
@@ -242,7 +242,7 @@ class Monitor(object):
                 nsample += audios.shape[0] * nchunk
             model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
             self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
-            report = model.report(text=text_features)
+            report = model.report(text=text_features, label_map=self.label_map)
             self.echo(f"{ifold:>2}th fold: {report}")
 
             precision = re.search("=\s(\d+\.\d+)\s\@", report)
