@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from clip import Transformer, ModifiedResNet, VisualTransformer  
+from .. import ModifiedResNet, VisualTransformer
 
 IMAGE_HEADS_REGISTRY = Registry("IMAGE_HEADS")
 IMAGE_HEADS_REGISTRY.__doc__ = """

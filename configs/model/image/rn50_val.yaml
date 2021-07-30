@@ -1,0 +1,21 @@
+name: 'CLIPImageHead'
+freeze: True #False #
+from_scratch: False #True #
+width: 64 
+embed_dim: 1024 
+resolution: 224 
+ctx_len: ${model.text.ctx_len}
+encoder:
+    name: ResNetBackbone
+    layers: [3, 4, 6, 3] 
+pre_encoder:
+    name: ResNetPreEncoder
+    in_channels: 3 
+post_encoder:
+    name: ResNetPostEncoder
+misc:
+    name: Miscellanea
+pre_encoder_addon:
+    name: AddonEncoder
+post_encoder_addon:
+    name: AddonEncoder

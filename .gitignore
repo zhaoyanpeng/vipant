@@ -1,13 +1,41 @@
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info
-.pytest_cache
+# build artifacts
+
+.eggs/
+.mypy_cache
+build/
+dist/
+
+
+# dev tools
+
+.envrc
+.python-version
+.idea
+
+
+# jupyter notebooks
+
 .ipynb_checkpoints
 
-thumbs.db
-.DS_Store
-.idea
+
+# miscellaneous
+
+.cache/
+doc/_build/
+*.swp
+
+
+# python
+
+*.pyc
+*.pyo
+__pycache__
+
+
+# testing and continuous integration
+
+.coverage
+.pytest_cache/
 
 outputs
 configs/ai2-alexandria-fbf4c720d4a4.json

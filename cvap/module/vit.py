@@ -2,7 +2,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from clip import Transformer, LayerNorm 
+from clip import LayerNorm
+from . import Transformer
 
 class VisualTransformer(nn.Module):
     def __init__(

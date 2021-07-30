@@ -1,0 +1,24 @@
+name: 'CLIPImageHead'
+freeze: True #False #
+from_scratch: False #True #
+width: 768 
+embed_dim: 512
+resolution: 224 
+ctx_len: ${model.text.ctx_len}
+encoder:
+    name: TransformerBackbone
+    layers: 12
+    skip_attn_mask: True
+pre_encoder:
+    name: ViTPreEncoder
+    patch_size: 32 
+    stride: 32
+    in_channels: 3 
+post_encoder:
+    name: ViTPostEncoder
+misc:
+    name: Miscellanea
+pre_encoder_addon:
+    name: AddonEncoder
+post_encoder_addon:
+    name: AddonEncoder

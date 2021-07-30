@@ -1,0 +1,22 @@
+name: 'CLIPTextHead'
+freeze: True #False #
+from_scratch: False #True #
+width: 512
+embed_dim: ${model.image.embed_dim}
+resolution: None
+ctx_len: 77 
+encoder:
+    name: TransformerBackbone
+    layers: 12
+    skip_attn_mask: False
+pre_encoder:
+    name: GPTPreEncoder
+    vocab_size: 49408
+post_encoder:
+    name: GPTPostEncoder
+misc:
+    name: Miscellanea
+pre_encoder_addon:
+    name: AddonEncoder
+post_encoder_addon:
+    name: AddonEncoder

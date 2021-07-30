@@ -9,11 +9,8 @@ import torch.multiprocessing as mp
 from torch.nn import DataParallel
 from torch.nn.parallel import DistributedDataParallel
 
-from cvap.monitor.finetune import Monitor as ESCMonitor
-from cvap.monitor.cvap_ddp import Monitor as DDPMonitor
-from cvap.monitor.clap_dp import Monitor as LAMonitor
-from cvap.monitor.cvap_dp import Monitor as DPMonitor
 from cvap.util import seed_all_rng, setup_logger
+from cvap.monitor import *
 
 
 def _distributed_worker(local_rank, main_func, cfg, ddp):

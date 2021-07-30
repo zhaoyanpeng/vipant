@@ -1,0 +1,26 @@
+name: 'CLIPAudioHead'
+freeze: False #True #
+from_scratch: False #True #
+width: ${model.image.width} 
+embed_dim: ${model.image.embed_dim}
+resolution: 
+- ${running.max_audio_len}
+- ${running.num_mel_bins} 
+ctx_len: ${model.text.ctx_len}
+encoder:
+    name: TransformerBackbone
+    layers: ${model.image.encoder.layers}
+    skip_attn_mask: True
+pre_encoder:
+    name: ViTPreEncoder
+    patch_size: ${model.image.pre_encoder.patch_size} 
+    stride: [16, 16] 
+    in_channels: 3 
+post_encoder:
+    name: ViTPostEncoder
+misc:
+    name: Miscellanea
+pre_encoder_addon:
+    name: AddonEncoder
+post_encoder_addon:
+    name: AddonEncoder

@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from cvap.module import ModifiedResNet, VisualTransformer
+from .. import ModifiedResNet, VisualTransformer
 
 AUDIO_HEADS_REGISTRY = Registry("AUDIO_HEADS")
 AUDIO_HEADS_REGISTRY.__doc__ = """

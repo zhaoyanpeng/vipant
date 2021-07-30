@@ -343,3 +343,61 @@ class ClassificationHead(LossHead):
         loss_mean_x1 = self.loss_fn(logits_per_x1, x2)
         return loss_mean_x1
 
+@LOSS_HEADS_REGISTRY.register()
+class VALCELossHead(LossHead):
+    def __init__(self, cfg, **kwargs):
+        super().__init__()
+        self.loss_head_va = self.loss_head_lv = self.loss_head_al = None
+        if cfg.va:
+            self.loss_head_va = CELossHead(cfg, **kwargs)
+        if cfg.lv:
+            self.loss_head_lv = CELossHead(cfg, **kwargs) 
+        if cfg.al:
+            self.loss_head_al = CELossHead(cfg, **kwargs) 
+    
+    def copy_state_dict(self, state_dict): 
+        pass
+
+    def infer(self, x1, x2, x3, *args, **kwargs):
+        if x1 is not None and x2 is not None and self.loss_head_va is not None:
+            self.loss_head_va.infer(x1, x2, *args, **kwargs)
+        if x1 is not None and x3 is not None and self.loss_head_lv is not None:
+            self.loss_head_lv.infer(x1, x3, *args, **kwargs)
+        if x2 is not None and x3 is not None and self.loss_head_al is not None:
+            self.loss_head_al.infer(x2, x3, *args, **kwargs)
+        return None  
+
+    def report(self, gold_file=None):
+        report_list = list()
+        if self.loss_head_va is not None:
+            report_list.append(
+                self.loss_head_va.report(gold_file)
+            )
+        if self.loss_head_lv is not None:
+            report_list.append(
+                self.loss_head_lv.report(gold_file)
+            )
+        if self.loss_head_al is not None:
+            report_list.append(
+                self.loss_head_al.report(gold_file)
+            )
+        return " | ".join(report_list)
+
+    def forward(self, x1, x2, x3, *args, **kwargs):
+        """ v: x1; a: x2; l: x3
+        """
+        if not self.training:
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                return self.infer(x1, x2, x3, *args, **kwargs)
+            return None 
+
+        loss_va = loss_lv = loss_al = 0.
+        if x1 is not None and x2 is not None and self.loss_head_va is not None:
+            loss_va = self.loss_head_va(x1, x2, *args, **kwargs)
+        if x1 is not None and x3 is not None and self.loss_head_lv is not None:
+            loss_lv = self.loss_head_lv(x1, x3, *args, **kwargs)
+        if x2 is not None and x3 is not None and self.loss_head_al is not None:
+            loss_al = self.loss_head_al(x2, x3, *args, **kwargs)
+
+        loss = loss_va + loss_lv + loss_al
+        return loss
