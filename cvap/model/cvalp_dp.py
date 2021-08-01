@@ -114,7 +114,7 @@ class CVALPDP(nn.Module):
 
             self.cuda(self.cfg.rank) 
         else:
-            if self.cfg.running.siamese:
+            if self.cfg.running.siamese.alive:
                 tunable_params = self._build_siamese_backbone(**kwargs)            
             else:
                 tunable_params = self._build_separate_backbone(**kwargs)            
@@ -144,16 +144,24 @@ class CVALPDP(nn.Module):
     def _build_siamese_backbone(self, **kwargs):
         from_scratch, image_head_sd, text_head_sd, _ = self._load_clip(None) 
 
+        # image_head's parameters as the reference
         self.image_head = build_image_head(self.cfg.model.image)
         if not from_scratch and not self.cfg.model.image.from_scratch:
             self.image_head.copy_state_dict(image_head_sd)
             self.echo("Initialize image encoder from `image_head`.")
+        scfg = self.cfg.running.siamese
 
-        self.audio_head = build_audio_head(self.cfg.model.audio)
-        self.audio_head.encoder = self.image_head.encoder
+        # shared modules with audio_head
+        amodules = set(scfg.amodules)
+        kwargs = {
+            "shared_modules": amodules, "reference": self.image_head, "keep_hp": scfg.keep_hp
+        }
+        self.audio_head = build_audio_head(self.cfg.model.audio, **kwargs)
 
-        self.text_head = build_text_head(self.cfg.model.text)
-        self.text_head.encoder = self.image_head.encoder
+        # shared modules with text_head 
+        lmodules = set(scfg.lmodules)
+        kwargs.update({"shared_modules": lmodules})
+        self.text_head = build_text_head(self.cfg.model.text, **kwargs)
 
         self.loss_head = build_loss_head(self.cfg.model.loss)
 
@@ -162,10 +170,29 @@ class CVALPDP(nn.Module):
         } 
         if not self.cfg.model.image.freeze:
             tunable_params.update({
-                f"text_head.{k}": v for k, v in self.text_head.named_parameters()
+                f"image_head.{k}": v for k, v in self.image_head.named_parameters()
             })
         else:
-            self.echo("Freeze image/audio/text encoder.")
+            shared_modules = amodules | lmodules
+            pattern = "|".join([f"^{m}\." for m in shared_modules])
+            tunable_params.update({
+                f"image_head.{k}": v for k, v in self.image_head.named_parameters()
+            if re.match(pattern, k)}) # shared parameters must be tunable
+            self.echo(f"Freeze image encoder (excl. shared modules: {shared_modules}).")
+        if not self.cfg.model.audio.freeze:
+            pattern = "|".join([f"^{m}\." for m in amodules])
+            tunable_params.update({
+                f"audio_head.{k}": v for k, v in self.audio_head.named_parameters()
+            if not re.match(pattern, k)}) # filter out shared parameters
+        else:
+            self.echo("Freeze audio encoder.")
+        if not self.cfg.model.text.freeze:
+            pattern = "|".join([f"^{m}\." for m in lmodules])
+            tunable_params.update({
+                f"text_head.{k}": v for k, v in self.text_head.named_parameters()
+            if not re.match(pattern, k)}) # filter out shared parameters
+        else:
+            self.echo("Freeze text encoder.")
         return tunable_params
 
     def _build_separate_backbone(self, **kwargs):
@@ -191,18 +218,18 @@ class CVALPDP(nn.Module):
         tunable_params = {
             f"loss_head.{k}": v for k, v in self.loss_head.named_parameters()
         } 
-        if not self.cfg.model.audio.freeze:
-            tunable_params.update({
-                f"audio_head.{k}": v for k, v in self.audio_head.named_parameters()
-            })
-        else:
-            self.echo("Freeze audio encoder.")
         if not self.cfg.model.image.freeze:
             tunable_params.update({
                 f"image_head.{k}": v for k, v in self.image_head.named_parameters()
             })
         else:
             self.echo("Freeze image encoder.")
+        if not self.cfg.model.audio.freeze:
+            tunable_params.update({
+                f"audio_head.{k}": v for k, v in self.audio_head.named_parameters()
+            })
+        else:
+            self.echo("Freeze audio encoder.")
         if not self.cfg.model.text.freeze:
             tunable_params.update({
                 f"text_head.{k}": v for k, v in self.text_head.named_parameters()

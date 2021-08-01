@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .. import build_encoder_module
+from .. import build_encoder_module, interp_clip_vp_embedding
 
 """ The idea is to abstract an encoding head as a four-layer encoder. 
     (1) backbone encoder (most likely to be shared)
@@ -22,41 +22,81 @@ from .. import build_encoder_module
 class MetaHead(nn.Module):
     def __init__(self, cfg, **kwargs):
         super().__init__()
+        keep_hp = kwargs.pop("keep_hp", False)
+        reference = kwargs.pop("reference", None)
+        shared_modules = kwargs.pop("shared_modules", [])
         kwargs.update({
             "width": cfg.width, "embed_dim": cfg.embed_dim, 
             "ctx_len": cfg.ctx_len, "resolution": cfg.resolution
         }) # shared hyperparameters
 
-        self.encoder = build_encoder_module(
-            cfg.encoder, **kwargs
+        self.encoder = (
+            build_encoder_module(cfg.encoder, **kwargs) 
+            #if "encoder" not in shared_modules else reference.encoder 
         ) # backbone
-        self.pre_encoder = build_encoder_module(
-            cfg.pre_encoder, **kwargs
+        self.pre_encoder = (
+            build_encoder_module(cfg.pre_encoder, **kwargs)
+            #if "pre_encoder" not in shared_modules else reference.pre_encoder 
         )
+        self.post_encoder = (
+            build_encoder_module(cfg.post_encoder, **kwargs)
+            #if "post_encoder" not in shared_modules else reference.post_encoder 
+        )
+
         self.pre_encoder_addon = build_encoder_module(
             cfg.pre_encoder_addon, **kwargs
         ) # in-between `pre_encoder` & `encoder`
-        self.post_encoder = build_encoder_module(
-            cfg.post_encoder, **kwargs
-        )
         self.post_encoder_addon = build_encoder_module(
             cfg.post_encoder_addon, **kwargs
         ) # in-between `encoder` & `post_encoder`
 
+        # have to build all modules to get `position_resolution`, even though 
+        # we will probably replace all the modules by those of the `reference` 
         position_resolution = (
             self.pre_encoder.position_resolution or \
             self.encoder.position_resolution or \
             self.post_encoder.position_resolution
-        )
+        ) 
         kwargs.update({
             "position_resolution": position_resolution
         })
+        if "misc" in shared_modules:
+            kwargs.update({
+                "reference": eval("reference.misc") 
+            })
         self.misc = build_encoder_module(cfg.misc, **kwargs)
+
+        # time to share modules
+        self.replace_modules(shared_modules, reference, keep_hp=keep_hp)
+
+    def replace_modules(self, shared_modules, reference, keep_hp=False):
+        """ keep_hp: keep selected hyperparameters
+        """
+        if len(shared_modules) < 1 or reference is None:
+            return
+        module_list = ["encoder", "pre_encoder", "post_encoder"]
+        for module in module_list:
+            if module not in shared_modules: 
+                continue
+            self_module = eval(f"self.{module}")
+            refr_module = eval(f"reference.{module}")
+            #print(f"RP A {module} {self_module.hp} {refr_module.hp} {self_module == refr_module}")
+            if hasattr(self_module, "replace_modules"):
+                self_module.replace_modules(refr_module, keep_hp=keep_hp)
+                new_self_module = eval(f"self.{module}")
+                #print(f"RP B {module} {self_module.hp} {refr_module.hp} {self_module == refr_module} {new_self_module == refr_module}")
+            else: # via reference, not recommended
+                hp = self_module.hp 
+                exec(f"self.{module} = reference.{module}") # modified via reference
+                if keep_hp:
+                    exec(f"self.{module}.hp = {hp}") # so the `reference` is modified
+                new_self_module = eval(f"self.{module}")
+                #print(f"RP C {module} {self_module.hp} {refr_module.hp} {self_module == refr_module} {new_self_module == refr_module}")
 
     def forward(self, x: torch.Tensor, *args, **kwargs):
         kwargs.update({
-            "positional_embedding": self.misc.positional_embedding, 
-            "class_embedding": self.misc.class_embedding
+            "positional_embedding": self.misc.pos_embedding, 
+            "class_embedding": self.misc.cls_embedding
         })
         x = self.pre_encoder(x, **kwargs) # (N, L, D)
         x = self.pre_encoder_addon(x, **kwargs) # (N, L, D)
@@ -120,28 +160,6 @@ class CLIPAudioHead(MetaHead):
     def __init__(self, cfg, **kwargs):
         super().__init__(cfg, **kwargs)
 
-    def _positional_embedding(self, old_pos_emb):
-        pos_resolution = self.misc.position_resolution
-        num_pos, pos_dim = old_pos_emb.shape[:2]
-        num_pos_required = np.prod(pos_resolution)
-        if num_pos_required + 1 <= num_pos:
-            new_pos_emb = old_pos_emb[:num_pos_required + 1]
-        else:
-            num_pos = int(np.sqrt(num_pos - 1))
-            ptensor = old_pos_emb[1:].reshape(
-                -1, num_pos, num_pos, pos_dim
-            ).permute(0, 3, 1, 2) 
-            new_pos_emb = F.interpolate(
-                ptensor,
-                pos_resolution,
-                mode="bilinear",
-                align_corners=False,
-            ).permute(0, 2, 3, 1).flatten(1, 2) 
-            new_pos_emb = torch.cat((
-                old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
-            ), dim=0)
-        return new_pos_emb
-
     def copy_state_dict(self, state_dict):
         if not self.encoder.batch_first: # TransformerBackbone
             pre_keys = {"conv1.weight"}
@@ -163,8 +181,8 @@ class CLIPAudioHead(MetaHead):
                 old_dict[k] = v
             # interpolation
             pos_key = "misc.positional_embedding"
-            old_dict[pos_key] = self._positional_embedding(
-                old_dict.pop(pos_key)
+            old_dict[pos_key] = interp_clip_vp_embedding(
+                old_dict.pop(pos_key), self.misc.position_resolution
             )
         else: # ResNetBackbone
             old_dict = OrderedDict()
@@ -179,8 +197,8 @@ class CLIPAudioHead(MetaHead):
             # interpolation
             pos_key = "post_encoder.positional_embedding" 
             new_key = "misc." + pos_key.rsplit(".")[-1]
-            old_dict[new_key] = self._positional_embedding(
-                old_dict.pop(pos_key)
+            old_dict[new_key] = interp_clip_vp_embedding(
+                old_dict.pop(pos_key), self.misc.position_resolution
             )
         new_dict = self.state_dict()
         new_keys = set(new_dict.keys())

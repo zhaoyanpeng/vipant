@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 from clip import Bottleneck 
 from clip import QuickGELU, LayerNorm
+
 from . import Transformer
 
 ENCODER_MODULES_REGISTRY = Registry("ENCODER_MODULES")
@@ -23,17 +24,14 @@ class MetaEncoder(nn.Module):
         super().__init__()
         self.position_resolution = None
 
-@ENCODER_MODULES_REGISTRY.register()
-class AddonEncoder(nn.Module):
-    """ enhance an existing encoder.
-    """
-    def __init__(self, cfg, **kwargs):
-        super().__init__()
+    @property
+    def hp(self): 
+        return [] 
 
-    def forward(self, x: torch.Tensor, **kwargs):
-        return x
+    @hp.setter
+    def hp(self, hp):
+        pass 
 
-@ENCODER_MODULES_REGISTRY.register()
 class Miscellanea(nn.Module):
     """ a parameter container.  
     """
@@ -50,10 +48,40 @@ class Miscellanea(nn.Module):
         self.positional_embedding = nn.Parameter(scale * torch.randn(positions, width))
         self.class_embedding = nn.Parameter(scale * torch.randn(width)) #None # `<s>` as the class 
 
+@ENCODER_MODULES_REGISTRY.register()
+class AddonEncoder(nn.Module):
+    """ enhance an existing encoder.
+    """
+    def __init__(self, cfg, **kwargs):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor, **kwargs):
+        return x
+
+@ENCODER_MODULES_REGISTRY.register()
+class CLIPMisc(Miscellanea):
+    """ a parameter container.  
+    """
+    def __init__(self, cfg, position_resolution=None, reference=None, **kwargs):
+        super().__init__(cfg, position_resolution=position_resolution, **kwargs)
+        if reference is not None:
+            self.positional_embedding = reference.positional_embedding 
+            self.class_embedding = reference.class_embedding 
         self.initialize_parameters()
 
     def initialize_parameters(self):
         pass
+
+    @property
+    def pos_embedding(self):
+        #print(f"{self.positional_embedding.shape} {self.position_resolution}")
+        return interp_clip_vp_embedding(
+            self.positional_embedding, self.position_resolution
+        )
+
+    @property
+    def cls_embedding(self):
+        return self.class_embedding 
 
 @ENCODER_MODULES_REGISTRY.register()
 class GPTPreEncoder(MetaEncoder):
@@ -138,18 +166,31 @@ def _interpolate_conv_weight(weight, input_shape):
 class ViTPreEncoder(MetaEncoder):
     def __init__(self, cfg, width=768, resolution=224, **kwargs): 
         super().__init__()
-        stride, _, self.position_resolution = _vit_position_resolution(
+        self.stride, _, self.position_resolution = _vit_position_resolution(
             resolution, cfg.patch_size, cfg.stride
         )
         self.position_resolution += (width,)
         self.conv1 = nn.Conv2d(
-            in_channels=cfg.in_channels, out_channels=width, kernel_size=cfg.patch_size, stride=stride, bias=False
+            in_channels=cfg.in_channels, out_channels=width, kernel_size=cfg.patch_size, stride=self.stride, bias=False
         )
         self.ln = LayerNorm(width)
         self.initialize_parameters()
 
     def initialize_parameters(self):
         pass
+
+    def replace_modules(self, reference, keep_hp=False):
+        self.conv1, self.ln = reference.conv1, reference.ln
+        if not keep_hp:
+            self.stride, self.position_resolution = reference.stride, reference.position_resolution
+
+    @property
+    def hp(self):
+        return [self.stride, self.position_resolution] 
+
+    @hp.setter
+    def hp(self, hp):
+        (self.stride, self.position_resolution) = hp 
 
     @property
     def dtype(self):
@@ -170,7 +211,7 @@ class ViTPreEncoder(MetaEncoder):
                 _interpolate_conv_weight(self.conv1.weight, x.shape)
             )
             x = F.conv2d(
-                x, conv1_weight, bias=self.conv1.bias, stride=self.conv1.stride
+                x, conv1_weight, bias=self.conv1.bias, stride=self.stride
             )
         else:
             x = self.conv1(x)  # shape = [*, width, grid, grid]
@@ -179,6 +220,7 @@ class ViTPreEncoder(MetaEncoder):
         x = torch.cat([
             class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x
         ], dim=1)  # shape = [*, grid ** 2 + 1, width]
+        #print(f"C {x.shape}, {positional_embedding.shape}, {self.position_resolution}")
         x = x + positional_embedding[:x.shape[1]].to(x.dtype)
         x = self.ln(x)
         return x
@@ -260,7 +302,7 @@ class ResNetPreEncoder(MetaEncoder):
                 _interpolate_conv_weight(self.conv1.weight, x.shape)
             )
             x = F.conv2d(
-                x, conv1_weight, bias=self.conv1.bias, stride=self.conv1.stride
+                x, conv1_weight, bias=self.conv1.bias, stride=self.conv1.stride, padding=self.conv1.padding
             )
         else:
             x = self.conv1(x)  # shape = [*, width, grid, grid]
@@ -293,6 +335,21 @@ class ResNetPostEncoder(MetaEncoder):
         nn.init.normal_(self.v_proj.weight, std=std)
         nn.init.normal_(self.c_proj.weight, std=std)
 
+    def replace_modules(self, reference, keep_hp=False):
+        self.k_proj, self.q_proj, self.v_proj, self.c_proj = (
+            reference.k_proj, reference.q_proj, reference.v_proj, reference.c_proj
+        )
+        if not keep_hp:
+            self.position_resolution = reference.position_resolution
+
+    @property
+    def hp(self):
+        return [self.position_resolution] 
+
+    @hp.setter
+    def hp(self, hp):
+        (self.position_resolution,) = hp 
+
     def forward(
         self, 
         x: torch.Tensor, 
@@ -301,6 +358,7 @@ class ResNetPostEncoder(MetaEncoder):
     ):
         x = x.reshape(x.shape[0], x.shape[1], x.shape[2] * x.shape[3]).permute(2, 0, 1)  # NCHW -> (HW)NC
         x = torch.cat([x.mean(dim=0, keepdim=True), x], dim=0)  # (HW+1)NC
+        #print(f"C {x.shape}, {positional_embedding.shape}, {self.position_resolution}")
         x = x + positional_embedding[:x.shape[0], None, :].to(x.dtype)  # (HW+1)NC
         x, _ = F.multi_head_attention_forward(
             query=x, key=x, value=x,
@@ -420,4 +478,28 @@ class ResidualAttentionBlock(nn.Module):
         x = x + self.attention(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x
+
+def interp_clip_vp_embedding(old_pos_emb, pos_resolution):
+    """ `vp` stands for `visual positional`
+        old_pos_emb: (H x W + 1, D)
+    """
+    num_pos, pos_dim = old_pos_emb.shape[:2]
+    num_pos_required = np.prod(pos_resolution)
+    if num_pos_required + 1 <= num_pos:
+        new_pos_emb = old_pos_emb[:num_pos_required + 1]
+    else:
+        num_pos = int(np.sqrt(num_pos - 1))
+        ptensor = old_pos_emb[1:].reshape(
+            -1, num_pos, num_pos, pos_dim
+        ).permute(0, 3, 1, 2) 
+        new_pos_emb = F.interpolate(
+            ptensor,
+            pos_resolution,
+            mode="bilinear",
+            align_corners=False,
+        ).permute(0, 2, 3, 1).flatten(1, 2) 
+        new_pos_emb = torch.cat((
+            old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
+        ), dim=0)
+    return new_pos_emb
 

@@ -15,7 +15,7 @@ pre_encoder:
 post_encoder:
     name: GPTPostEncoder
 misc:
-    name: Miscellanea
+    name: CLIPMisc
 pre_encoder_addon:
     name: AddonEncoder
 post_encoder_addon:

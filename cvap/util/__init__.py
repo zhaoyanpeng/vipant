@@ -36,3 +36,9 @@ def setup_logger(output_dir=None, name="cvap", rank=0, output=None):
         logger.addHandler(handler)
     return logger
 
+def numel(model: torch.nn.Module, trainable: bool = False):
+    parameters = list(model.parameters())
+    if trainable:
+        parameters = [p for p in parameters if p.requires_grad]
+    unique = {p.data_ptr(): p for p in parameters}.values()
+    return sum(p.numel() for p in unique) 

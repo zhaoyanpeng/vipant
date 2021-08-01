@@ -16,7 +16,7 @@ pre_encoder:
 post_encoder:
     name: ResNetPostEncoder
 misc:
-    name: Miscellanea
+    name: CLIPMisc
 pre_encoder_addon:
     name: AddonEncoder
 post_encoder_addon:

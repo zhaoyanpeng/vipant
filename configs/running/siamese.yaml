@@ -6,19 +6,20 @@ eval_name: 'npz_eval_toy'
 test_name: 'npz_eval_toy'
 eval_samples: 250 
 test_samples: 5000
-siamese: False
-max_audio_len: 1000
 peep_rate: 1 
 save_rate: 3 
 batch_size: 64 
 epochs: 1000 
+save_epoch: False
 # vision backbone
 resolution: ${model.image.resolution}
-# kaldi: audio feature extractor
-frame_length: 25
-frame_shift: 10
-window_type: hamming
-num_mel_bins: 128
-low_freq: 0.0
-high_freq: 8000
-use_log_fbank: True
+# audio backbone
+max_audio_len: ${running.audio.max_len}
+num_mel_bins: ${running.audio.num_mel_bins}
+#off # on: true interpreted by YAML, so on/off cannot be used as the keys
+# share, or not share; the image head as the reference
+siamese: 
+  alive: False  
+  keep_hp: True # keep run-time hyperparameters 
+  amodules: ["encoder", "pre_encoder", "post_encoder", "misc"]
+  lmodules: ["encoder"]

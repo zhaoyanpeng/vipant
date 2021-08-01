@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
+from ..util import numel
 from ..model import CVALPDP as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_dataloader 
@@ -220,6 +221,7 @@ class Monitor(object):
             k = re.sub("^module\.", "", k) if ddp else k
             if f"{k}" not in tunable_params:
                 v.requires_grad = False
+        self.echo(f"# param {numel(self.model)}, # tunable {numel(self.model, True)}.")
         param_groups = [
             {"params": [p for p in self.params if p.ndim > 1]},
             {"params": [p for p in self.params if p.ndim < 2]},
