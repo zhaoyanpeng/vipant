@@ -371,17 +371,17 @@ class VALCELossHead(LossHead):
         report_list = list()
         if self.loss_head_va is not None:
             report_list.append(
-                self.loss_head_va.report(gold_file)
+                "VA: " + self.loss_head_va.report(gold_file)
             )
         if self.loss_head_lv is not None:
             report_list.append(
-                self.loss_head_lv.report(gold_file)
+                "LV: " + self.loss_head_lv.report(gold_file)
             )
         if self.loss_head_al is not None:
             report_list.append(
-                self.loss_head_al.report(gold_file)
+                "AL: " + self.loss_head_al.report(gold_file)
             )
-        return " | ".join(report_list)
+        return "\n" + "\n".join(report_list).strip()
 
     def forward(self, x1, x2, x3, *args, **kwargs):
         """ v: x1; a: x2; l: x3

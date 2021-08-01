@@ -15,7 +15,8 @@ from torch.nn.parallel import DistributedDataParallel
 from ..util import numel
 from ..model import CVALPDP as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
-from ..dataset import build_dataloader 
+from ..dataset import build_audioset_dataloader as build_dataloader
+from ..dataset import build_audioset_label_map as build_label_map
 
 class Monitor(object):
     def __init__(self, cfg, echo, device):
@@ -34,17 +35,19 @@ class Monitor(object):
 
     def build_data(self):
         rcfg = self.cfg.running
+        label_map = build_label_map(rcfg.data_root, label_map=rcfg.label_map, prompt=rcfg.prompt)
+        self.echo(f"Total {len(label_map)} sound classes.")
         data_name = rcfg.eval_name if self.cfg.eval else rcfg.data_name
         _, self.dataloader = build_dataloader(
-            self.cfg, data_name, shuffle=(not self.cfg.eval), train=(not self.cfg.eval)
+            self.cfg, data_name, label_map, shuffle=(not self.cfg.eval), train=(not self.cfg.eval)
         )
-        self.echo(f"Instantiating main dataloader from `{data_name}': total {len(self.dataloader)} batches.")
+        self.echo(f"Instantiate main dataloader from `{data_name}': total {len(self.dataloader)} batches.")
         self.gold_file = f"{rcfg.data_root}/{data_name}.csv"
         # evaluation
         eval_name = "IGNORE_ME" if self.cfg.eval else rcfg.eval_name
         data_path = f"{rcfg.data_root}/{eval_name}"
         _, self.evalloader = build_dataloader(
-            self.cfg, eval_name, shuffle=False, train=False
+            self.cfg, eval_name, label_map, shuffle=False, train=False
         ) if os.path.isdir(data_path) or os.path.isfile(f"{data_path}.csv") else (None, None)
         if self.evalloader is not None:
             self.echo(f"Will do evaluation every {rcfg.save_rate} steps on {len(self.evalloader)} batches.")
@@ -74,7 +77,9 @@ class Monitor(object):
 
     def make_batch(self, batch):
         images = torch.tensor(batch[0], device=self.device) # (c, h, w)
-        audios = torch.tensor(batch[1], device=self.device).unsqueeze(1),
+        audios = torch.tensor(batch[1], device=self.device).unsqueeze(1)
+        text   = torch.tensor(batch[2], device=self.device) # (c, h, w)
+        labels = torch.tensor(batch[3], device=self.device) # (c, h, w)
         if images.shape[-1] != self.cfg.running.resolution:
             images = F.interpolate(
                 images,
@@ -83,24 +88,9 @@ class Monitor(object):
                 align_corners=False,
             )
         batch = (
-            images, audios, batch[2], # sample id or name
+            images, audios, text, labels, batch[-1], # sample id or name
         )
         return batch # bare tensors
-
-        images, audios = batch["image"], batch["audio"]
-
-        images = images.cuda(self.cfg.rank, non_blocking=True)
-        audios = audios.cuda(self.cfg.rank, non_blocking=True)
-        return images, audios # directly return dict of tensors
-
-        images = torch.tensor(
-            np.concatenate(images, axis=0), device=self.device
-        ) #.cuda(self.cfg.rank, non_blocking=True)
-        audios = torch.tensor(
-            np.concatenate(audios, axis=0), device=self.device
-        ).unsqueeze(1) #.cuda(self.cfg.rank, non_blocking=True)
-        #print(f"make_batch {dist.get_rank()} {batch['name']}")
-        return images, audios
 
     def timeit(self, time_dict, key=None, show=False):
         if self.cfg.rank != 0:
@@ -124,7 +114,7 @@ class Monitor(object):
         device_ids = [i for i in range(self.cfg.num_gpus)]
         nchunk = dist.get_world_size() if torch.distributed.is_initialized() else 1  
         for step, batch in enumerate(self.dataloader, start=iepoch * len(self.dataloader)):
-            images, audios, _ = self.make_batch(batch)
+            images, audios, text, _, _ = self.make_batch(batch)
             self.timeit(all_time, key="data")
 
             #print(images.size(), audios.size())
@@ -134,7 +124,7 @@ class Monitor(object):
 
             self.optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast():
-                loss = self.model(images, audios, None, device_ids=device_ids)
+                loss = self.model(images, audios, text, device_ids=device_ids)
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
@@ -189,10 +179,10 @@ class Monitor(object):
             if nsample >= samples:
                 #print(f"{nsample}\t{ibatch}/{nbatch} continue")
                 break #continue # iterate through every batch 
-            images, audios, names = self.make_batch(batch)
+            images, audios, text, _, names = self.make_batch(batch)
             #msg = f"{images[0, 0, 50, 50:55]} {audios[0, 0, 50, 50:55]}" # if ibatch == 0 else ""
             #print(f"{nsample}\t{ibatch}/{nbatch} done {msg}")
-            loss = self.model(images, audios, None, device_ids=device_ids, names=names)
+            loss = self.model(images, audios, text, device_ids=device_ids, names=names)
             nsample += images.shape[0] * nchunk
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
         self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
@@ -221,7 +211,7 @@ class Monitor(object):
             k = re.sub("^module\.", "", k) if ddp else k
             if f"{k}" not in tunable_params:
                 v.requires_grad = False
-        self.echo(f"# param {numel(self.model)}, # tunable {numel(self.model, True)}.")
+        self.echo(f"# param {numel(self.model) / 1e6:.2f}M # tunable {numel(self.model, True) / 1e6:.2f}M.")
         param_groups = [
             {"params": [p for p in self.params if p.ndim > 1]},
             {"params": [p for p in self.params if p.ndim < 2]},
