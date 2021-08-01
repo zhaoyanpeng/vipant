@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
+from ..util import numel
 from ..model import CVAPDP as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_dataloader 
@@ -37,7 +38,7 @@ class Monitor(object):
         _, self.dataloader = build_dataloader(
             self.cfg, data_name, shuffle=(not self.cfg.eval), train=(not self.cfg.eval)
         )
-        self.echo(f"Instantiating main dataloader from `{data_name}': total {len(self.dataloader)} batches.")
+        self.echo(f"Instantiate main dataloader from `{data_name}': total {len(self.dataloader)} batches.")
         self.gold_file = f"{rcfg.data_root}/{data_name}.csv"
         # evaluation
         eval_name = "IGNORE_ME" if self.cfg.eval else rcfg.eval_name
@@ -220,6 +221,7 @@ class Monitor(object):
             k = re.sub("^module\.", "", k) if ddp else k
             if f"{k}" not in tunable_params:
                 v.requires_grad = False
+        self.echo(f"# param {numel(self.model) / 1e6:.2f}M # tunable {numel(self.model, True) / 1e6:.2f}M.")
         param_groups = [
             {"params": [p for p in self.params if p.ndim > 1]},
             {"params": [p for p in self.params if p.ndim < 2]},

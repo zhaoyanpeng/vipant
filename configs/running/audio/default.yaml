@@ -13,9 +13,6 @@ audio_transforms:
 - [RandomFlip, {p: 0.5}]
 - [RandomScale, {scale: 1.5, keep_len: True}]
 - [RandomNoise, {snr_min_db: 10.0, snr_max_db: 120.0, p: 0.25}]
-audio_scale: True
-audio_flip: True
-audio_noise: True
 # transform of fbanks 
 transform_fbank: True 
 fbank_transforms:

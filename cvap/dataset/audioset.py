@@ -40,17 +40,7 @@ class AudiosetDatasetNpz(data.Dataset):
         self.train = train
         self.cfg = cfg
 
-        acfg = cfg.audio
-        self.transform_audio, self.transform_fbank = make_transform(acfg)        
-        self.kaldi_params = {
-            "use_log_fbank": acfg.use_log_fbank,
-            "frame_length": acfg.frame_length,
-            "frame_shift": acfg.frame_shift,
-            "window_type": acfg.window_type,
-            "num_mel_bins": acfg.num_mel_bins,
-            "high_freq": acfg.high_freq,
-            "low_freq": acfg.low_freq,
-        }
+        self.transform_audio, self.transform_fbank = make_transform(cfg.audio)
 
     def _shuffle(self):
         pass
@@ -76,9 +66,11 @@ class AudiosetDatasetNpz(data.Dataset):
         image = images[idx] 
 
         max_audio_len = self.cfg.max_audio_len
-        audio = np.load(aclip_file)["flag"] # (..., time, freq): `flag' is used as the key accidentally 
+        audio = np.load(aclip_file)["flag"] # (..., time, freq): `flag' is used as the key accidentally
+
         if self.train and self.transform_fbank is not None:
             audio = self.transform_fbank(audio)
+
         npad = max_audio_len - audio.shape[0]
         if npad > 0:
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))

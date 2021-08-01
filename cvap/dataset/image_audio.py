@@ -15,16 +15,9 @@ import torch.utils.data as data
 import torch.nn.functional as F
 
 from . import PairImageSpectrogramTFRecords
-
-def _extract_kaldi_spectrogram(filename, params, max_audio_len=1000):
-    waveform, sample_rate = torchaudio.load(f"{filename}")
-    fbank_feat = torchaudio.compliance.kaldi.fbank(
-        waveform,
-        sample_frequency=sample_rate,
-        **params,
-    )
-    fbank_feat = fbank_feat[:max_audio_len]
-    return fbank_feat.numpy()
+from .audio import (
+    make_transform, _extract_kaldi_spectrogram
+)
 
 class ImageAudioDataset(data.Dataset):
     def __init__(self, cfg, data_name, train):
@@ -65,6 +58,8 @@ class ImageAudioDatasetNpz(data.Dataset):
         self.train = train
         self.cfg = cfg
 
+        self.transform_audio, self.transform_fbank = make_transform(cfg.audio)
+
     def _shuffle(self):
         pass
 
@@ -76,8 +71,6 @@ class ImageAudioDatasetNpz(data.Dataset):
         aclip_file = f"{self.cfg.data_root}/{aclip}"
         frame_file = f"{self.cfg.data_root}/{frame}"
 
-        max_audio_len = self.cfg.max_audio_len
-
         images = np.load(frame_file)
         images = [images[key] for key in images.files if len(images[key]) != 0]
         assert len(images) != 0, f"no frame exist: |images| = {len(images)}"
@@ -87,8 +80,13 @@ class ImageAudioDatasetNpz(data.Dataset):
             idx = int(np.ceil(len(images) / 2)) - 1
         image = images[idx] 
 
-        audio = np.load(aclip_file)["flag"] # `flag' is used as the key accidentally 
-        npad =  self.cfg.max_audio_len - audio.shape[0]
+        max_audio_len = self.cfg.max_audio_len
+        audio = np.load(aclip_file)["flag"] # (..., time, freq): `flag' is used as the key accidentally
+
+        if self.train and self.transform_fbank is not None:
+            audio = self.transform_fbank(audio)
+
+        npad =  max_audio_len - audio.shape[0]
         if npad > 0:
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
         
@@ -118,14 +116,16 @@ class ImageAudioDatasetSrc(data.Dataset):
         self.train = train
         self.cfg = cfg
         
+        acfg = cfg.audio
+        self.transform_audio, self.transform_fbank = make_transform(acfg)
         self.kaldi_params = {
-            "use_log_fbank": cfg.use_log_fbank,
-            "frame_length": cfg.frame_length,
-            "frame_shift": cfg.frame_shift,
-            "window_type": cfg.window_type,
-            "num_mel_bins": cfg.num_mel_bins,
-            "high_freq": cfg.high_freq,
-            "low_freq": cfg.low_freq,
+            "use_log_fbank": acfg.use_log_fbank,
+            "frame_length": acfg.frame_length,
+            "frame_shift": acfg.frame_shift,
+            "window_type": acfg.window_type,
+            "num_mel_bins": acfg.num_mel_bins,
+            "high_freq": acfg.high_freq,
+            "low_freq": acfg.low_freq,
         }
 
     def _shuffle(self):
@@ -153,9 +153,18 @@ class ImageAudioDatasetSrc(data.Dataset):
             idx = int(np.ceil(len(images) / 2)) - 1
         image = images[idx] 
         
+        max_audio_len = self.cfg.max_audio_len
         audio = _extract_kaldi_spectrogram(
-            aclip_file, self.kaldi_params, max_audio_len=max_audio_len
-        )
+            aclip_file,
+            self.kaldi_params,
+            train=self.train,
+            max_audio_len=max_audio_len,
+            transform_audio=(self.transform_audio if self.train else None)
+        ) # (..., time, freq)
+
+        if self.train and self.transform_fbank is not None:
+            audio = self.transform_fbank(audio)
+
         npad =  self.cfg.max_audio_len - audio.shape[0]
         if npad > 0:
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
