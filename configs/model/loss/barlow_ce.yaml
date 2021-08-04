@@ -1,0 +1,9 @@
+name: 'BarlowCELossHead'
+lambd_barlow: 0.05 
+ce:
+    name: 'CELossHead'
+barlow:
+    name: 'BarlowLossHead'
+    embed_dim: ${model.image.embed_dim}
+    lambd_off: 0.0051
+    layers: [2048, 4096, 4096]

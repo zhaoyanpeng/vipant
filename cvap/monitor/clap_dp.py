@@ -179,6 +179,9 @@ class Monitor(object):
             nsample += audios.shape[0] * nchunk
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
         self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
+        #audio_npy_file = f"{self.cfg.model_root}/{self.cfg.model_name}/clotho.audios.val"
+        #audios = torch.cat(model.loss_head.x1s)
+        #np.save(audio_npy_file, audios.cpu().numpy())
         return model.report(gold_file=None)
 
     def save(self):

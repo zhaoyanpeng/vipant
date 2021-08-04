@@ -26,6 +26,7 @@ class LossHead(nn.Module):
     def __init__(self):
         super().__init__()
         self.reduce = False
+        self.normalized = True
 
     def copy_state_dict(self, state_dict): 
         pass
@@ -234,8 +235,19 @@ class BarlowLossHead(LossHead):
     # see Barlow Twins: https://arxiv.org/abs/2103.03230 
     def __init__(self, cfg, **kwargs):
         super().__init__()
-        self.bn = nn.BatchNorm1d(cfg.embed_dim, affine=False) 
-        self.off_weight = cfg.off_weight
+        self.normalized = False
+        layers = list()
+        sizes = [cfg.embed_dim] + list(cfg.layers)
+        for i in range(len(sizes) - 2):
+            layers.extend([
+                nn.Linear(sizes[i], sizes[i + 1], bias=False),
+                nn.BatchNorm1d(sizes[i + 1]),
+                nn.ReLU(inplace=True)
+            ])
+        layers.append(nn.Linear(sizes[-2], sizes[-1], bias=False))
+        self.linear = nn.Sequential(*layers)
+        self.bn = nn.BatchNorm1d(sizes[-1], affine=False) 
+        self.lambd_off = cfg.lambd_off
         self.reduce = True 
     
     @staticmethod
@@ -248,18 +260,25 @@ class BarlowLossHead(LossHead):
     
     def forward(self, x1, x2, *args, **kwargs):
         if not self.training:
-            return self.infer(x1, x2)
-        x1, x2 = self.bn(x1), self.bn(x2)
-        c = x1.t() @ x2
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                return self.infer(x1, x2, *args, **kwargs)
+            return None
+        x1 = self.linear(x1)
+        x2 = self.linear(x2)
+        # empirical cross-correlation matrix
+        c = self.bn(x1).T @ self.bn(x2)
         c.div_(x1.size(0))
+        if dist.is_initialized():
+            torch.distributed.all_reduce(c)
         on_diag, off_diag = self.loss_fn(c)
-        loss = on_diag + self.off_weight * off_diag
+        loss = on_diag + self.lambd_off * off_diag
         return loss
 
 @LOSS_HEADS_REGISTRY.register()
 class ClassificationHead(LossHead):
     def __init__(self, cfg, **kwargs):
         super().__init__()
+        self.normalized = False
         assert "output_dim" in kwargs, f"`the label number` is not found in `kwargs`"
         nlabel = kwargs["output_dim"]
         self.linear = nn.Sequential(
@@ -400,4 +419,28 @@ class VALCELossHead(LossHead):
             loss_al = self.loss_head_al(x2, x3, *args, **kwargs)
 
         loss = loss_va + loss_lv + loss_al
+        return loss
+
+@LOSS_HEADS_REGISTRY.register()
+class BarlowCELossHead(LossHead):
+    # combining barlow loss and cross-entropy loss 
+    def __init__(self, cfg, **kwargs):
+        super().__init__()
+        self.normalized = False
+        self.loss_ce = build_loss_head(cfg.ce, **kwargs)
+        self.loss_barlow = build_loss_head(cfg.barlow, **kwargs)
+        self.lambd_barlow = cfg.lambd_barlow
+        self.reduce = True 
+
+    def report(self, gold_file=None):
+        return self.loss_ce.report(gold_file=gold_file) 
+    
+    def forward(self, x1, x2, *args, **kwargs):
+        if not self.training:
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                return self.loss_ce.infer(x1, x2, *args, **kwargs)
+            return None
+        loss_ce = self.loss_ce(x1, x2, *args, **kwargs)
+        loss_barlow = self.loss_barlow(x1, x2, *args, **kwargs)
+        loss = loss_ce + self.lambd_barlow * loss_barlow
         return loss

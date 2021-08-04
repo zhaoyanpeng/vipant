@@ -1,3 +1,4 @@
 name: 'BarlowLossHead'
 embed_dim: ${model.image.embed_dim}
-off_weight: 0.03
+lambd_off: 0.0051
+layers: [2048, 4096, 4096]

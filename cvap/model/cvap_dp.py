@@ -21,7 +21,7 @@ class CVAPDP(nn.Module):
     def forward(self, images, audios, *args, **kwargs):
         device_ids = kwargs.get("device_ids", [0])
         # how to asynchronize the two `data_parallel` 
-        kwargs = {"normalized": True, "names": kwargs.get("names", None)}
+        kwargs = {"normalized": self.loss_head.normalized, "names": kwargs.get("names", None)}
         image_features = data_parallel(
             self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
         )
