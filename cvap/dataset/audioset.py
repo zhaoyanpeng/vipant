@@ -78,9 +78,13 @@ class AudiosetDatasetNpz(data.Dataset):
         image = image[None]
         audio = audio[None]
         
-        # TODO return all labels if it is a classification task
-        category = categories[ict]
-        label, _, text_int = self.label_map[category] 
+        if not self.cfg.clf: 
+            category = categories[ict]
+            label, _, text_int = self.label_map[category] 
+        else: # classification task
+            label_set = set([self.label_map[category][0] for category in categories])
+            label = [1 if i in label_set else 0 for i in range(self.num_label)] 
+            text_int = [0] # TODO concatenate all text pieces
 
         item = {"image": image, "audio": audio, "text": text_int, "label": label, "name": name}
         return item 
@@ -164,9 +168,13 @@ class AudiosetDatasetSrc(data.Dataset):
         image = image[None]
         audio = audio[None]
 
-        # TODO return all labels if it is a classification task
-        category = categories[ict]
-        label, _, text_int = self.label_map[category] 
+        if not self.cfg.clf: 
+            category = categories[ict]
+            label, _, text_int = self.label_map[category] 
+        else: # classification task
+            label_set = set([self.label_map[category][0] for category in categories])
+            label = [1 if i in label_set else 0 for i in range(self.num_label)] 
+            text_int = [0] # TODO concatenate all text pieces
 
         item = {"image": image, "audio": audio, "text": text_int, "label": label, "name": name}
         return item 

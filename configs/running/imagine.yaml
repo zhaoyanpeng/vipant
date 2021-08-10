@@ -13,16 +13,10 @@ save_rate: 3
 batch_size: 64 
 epochs: 1000 
 save_epoch: False
-clf: False
+clf: True
+imagine: False
 # vision backbone
 resolution: ${model.image.resolution}
 # audio backbone
 max_audio_len: ${running.audio.max_len}
 num_mel_bins: ${running.audio.num_mel_bins} 
-#off # on: true interpreted by YAML, so on/off cannot be used as the keys 
-#share, or not share; the image head as the reference
-siamese: 
-    alive: True
-    keep_hp: True # keep run-time hyperparameters 
-    amodules: ["encoder"] #, "pre_encoder", "post_encoder", "misc"]
-    lmodules: [] #"encoder"]

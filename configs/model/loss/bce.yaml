@@ -1,0 +1,3 @@
+name: 'BCELossHead'
+embed_dim: ${model.audio.embed_dim} 
+layers: []

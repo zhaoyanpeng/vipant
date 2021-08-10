@@ -14,6 +14,7 @@ ENV PYTHONPATH=/audio:$PYTHONPATH
 
 COPY requirements.txt /audio
 RUN pip install -r /audio/requirements.txt
+RUN pip install --upgrade scikit-learn scikit-video scikit-image
 
 COPY clip /audio/clip
 COPY cvap /audio/cvap

@@ -1,0 +1,8 @@
+name: 'BCEAndCELossHead'
+lambd_ce: 1. 
+ce:
+    name: 'CELossHead'
+bce:
+    name: 'BCELossHead'
+    embed_dim: ${model.audio.embed_dim}
+    layers: []

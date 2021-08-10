@@ -1,3 +1,4 @@
+from .audioset_classifier import AudioSetClassifier
 from .audio_classifier import AudioClassifier
 from .cvap_ddp import CVAPDDP
 from .cvalp_dp import CVALPDP
