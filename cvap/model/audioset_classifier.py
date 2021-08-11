@@ -103,6 +103,13 @@ class AudioSetClassifier(nn.Module):
 
         if self.cfg.eval:
             local_cfg, audio_head_sd, loss_head_sd = load_checkpoint()
+            from_scratch, image_head_sd, _, _ = load_clip(None)
+
+            self.image_head = build_image_head(self.cfg.model.image)
+            if not from_scratch:
+                self.image_head.copy_state_dict(image_head_sd)
+            else:
+                self.image_head = None
             
             self.audio_head = build_audio_head(local_cfg.model.audio)
             self.audio_head.load_state_dict(audio_head_sd)

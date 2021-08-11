@@ -69,7 +69,12 @@ class AudioClassifier(nn.Module):
             local_cfg = checkpoint["cfg"]
             local_str = OmegaConf.to_yaml(local_cfg)
             #self.echo(f"Old configs:\n\n{local_str}")
-            audio_head_sd, loss_head_sd = checkpoint["model"]
+            if len(checkpoint["model"]) >= 4:
+                _, audio_head_sd, _, loss_head_sd = checkpoint["model"]
+            elif len(checkpoint["model"]) == 2:
+                audio_head_sd, loss_head_sd = checkpoint["model"]
+            else:
+                raise ValueError(f"model state tuple containes invalid items ({len(checkpoint['model'])}).")
             return local_cfg, audio_head_sd, loss_head_sd 
         def load_clip(local_cfg):
             try: # try image / text backbone
@@ -114,13 +119,17 @@ class AudioClassifier(nn.Module):
             self.audio_head = build_audio_head(self.cfg.model.audio)
             if not self.cfg.model.audio.from_scratch:
                 if local_cfg is not None:
-                    if (list(audio_head_sd.keys())[0]).startswith("encoder."):
-                        audio_head_sd_new = OrderedDict()
-                        for k, v in audio_head_sd.items():
-                            k = re.sub("^encoder\.", "", k)
-                            audio_head_sd_new[k] = v
-                        audio_head_sd = audio_head_sd_new
-                    self.audio_head.copy_state_dict(audio_head_sd)
+                    if "misc.positional_embedding" in audio_head_sd:
+                        self.audio_head = build_audio_head(local_cfg.model.audio)
+                        self.audio_head.load_state_dict(audio_head_sd)
+                    else: # backward compatible
+                        if (list(audio_head_sd.keys())[0]).startswith("encoder."):
+                            audio_head_sd_new = OrderedDict()
+                            for k, v in audio_head_sd.items():
+                                k = re.sub("^encoder\.", "", k)
+                                audio_head_sd_new[k] = v
+                            audio_head_sd = audio_head_sd_new
+                        self.audio_head.copy_state_dict(audio_head_sd)
                     self.echo("Initialize audio encoder from `audio_head`.")
                 elif not from_scratch:
                     self.audio_head.copy_state_dict(image_head_sd)

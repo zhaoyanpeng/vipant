@@ -4,12 +4,14 @@ data_root: "/home/yanpengz/data/audioset"
 data_name: 'npz_unbalanced_train_segments'
 eval_name: 'npz_balanced_train_segments' #'eval' #
 test_name: 'eval'
+train_samples: 1. # fraction
 eval_samples: 5184 #5000
 test_samples: 5000
 peep_rate: 1 
 save_rate: 300 
 batch_size: 432 #108 #216 # 
 epochs: 1000 
+save_epoch: False 
 # vision backbone
 resolution: ${model.image.resolution}
 # audio backbone

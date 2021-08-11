@@ -54,6 +54,9 @@ class ImageAudioDatasetNpz(data.Dataset):
                 self.dataset.append(record) 
                 if not train and iline + 1 == cfg.eval_samples:
                     break
+        if train and cfg.train_samples > 0. and cfg.train_samples < 1.:
+            k = int(len(self.dataset) * cfg.train_samples)
+            self.dataset = np.random.choice(self.dataset, k, replace=False) 
         self.length = len(self.dataset)
         self.train = train
         self.cfg = cfg
@@ -112,6 +115,9 @@ class ImageAudioDatasetSrc(data.Dataset):
                 self.dataset.append(record) 
                 if not train and iline + 1 == cfg.eval_samples:
                     break
+        if train and cfg.train_samples > 0. and cfg.train_samples < 1.:
+            k = int(len(self.dataset) * cfg.train_samples)
+            self.dataset = np.random.choice(self.dataset, k, replace=False) 
         self.length = len(self.dataset)
         self.train = train
         self.cfg = cfg

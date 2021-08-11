@@ -119,7 +119,9 @@ class BCEAndCELossHead(LossHead):
         self.reduce = True 
 
     def report(self, gold_file=None):
-        report_ce = self.loss_ce.report(gold_file=gold_file) 
+        report_ce = ""
+        if hasattr(self.loss_ce, "x1s") and hasattr(self.loss_ce, "x2s"):
+            report_ce = self.loss_ce.report(gold_file=gold_file)
         report_bce = self.loss_bce.report(gold_file=gold_file) 
         return f"{report_ce}\n{report_bce}" 
     
@@ -128,7 +130,8 @@ class BCEAndCELossHead(LossHead):
         """
         if not self.training:
             if not dist.is_initialized() or dist.get_rank() == 0:
-                self.loss_ce.infer(x1, x3, *args, **kwargs)
+                if x3 is not None:
+                    self.loss_ce.infer(x1, x3, *args, **kwargs)
                 return self.loss_bce.infer(x1, x2, *args, **kwargs)
             return None
         loss_ce = self.loss_ce(x1, x3, *args, **kwargs)

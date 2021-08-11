@@ -38,7 +38,10 @@ class Monitor(object):
         _, self.dataloader = build_dataloader(
             self.cfg, data_name, shuffle=(not self.cfg.eval), train=(not self.cfg.eval)
         )
-        self.echo(f"Instantiate main dataloader from `{data_name}': total {len(self.dataloader)} batches.")
+        nstep = len(self.dataloader) 
+        if nstep < self.cfg.running.peep_rate:
+            self.cfg.running.peep_rate = nstep 
+        self.echo(f"Instantiate main dataloader from `{data_name}': total {nstep} ({self.cfg.running.peep_rate}) batches.")
         self.gold_file = f"{rcfg.data_root}/{data_name}.csv"
         # evaluation
         eval_name = "IGNORE_ME" if self.cfg.eval else rcfg.eval_name
@@ -162,7 +165,9 @@ class Monitor(object):
                     f"lr_w {lr_w:.2e} lr_b {lr_b:.2e} loss {self.total_loss / self.total_step:.3f} " + 
                     f"{self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
                 )
-            if self.total_step % self.cfg.running.save_rate == 0: # distributed eval
+            if self.total_step % self.cfg.running.save_rate == 0 or (
+                    self.cfg.running.save_epoch and self.total_step % len(self.dataloader) == 0
+                ): # distributed eval
                 report = ""
                 if self.evalloader is not None:
                     self.model.train(False)

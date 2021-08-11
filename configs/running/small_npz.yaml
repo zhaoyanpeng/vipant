@@ -4,12 +4,14 @@ data_root: "/home/yanpengz/data/audioset"
 data_name: 'npz_train_toy' # 'src_train_toy' #
 eval_name: 'npz_eval_toy' # 'src_eval_toy' #
 test_name: 'npz_eval_toy' #'src_eval_toy' #
+train_samples: 1.
 eval_samples: 250 
 test_samples: 5000
 peep_rate: 1 
 save_rate: 3 
 batch_size: 64 
 epochs: 1000 
+save_epoch: False 
 # vision backbone
 resolution: ${model.image.resolution}
 # audio backbone
