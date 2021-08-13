@@ -23,7 +23,7 @@ from .transform import make_transform, RandomCrop
 def _extract_kaldi_spectrogram(
     filename, params, train=True, mean=False, max_audio_len=1000, transform_audio=None
 ):
-    waveform, sample_rate = torchaudio.load(f"{filename}")
+    waveform, sample_rate = torchaudio.load(filename)
     if mean: # mean along channel
         waveform = waveform.mean(0, keepdim=True)
     if transform_audio is not None:

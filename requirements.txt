@@ -1,4 +1,10 @@
 numpy
+pydub
+youtube-dl
+scikit-learn
+scikit-video
+scikit-image
+google-cloud-storage
 torchvision==0.9.1
 regex==2021.4.4
 ftfy==6.0.3

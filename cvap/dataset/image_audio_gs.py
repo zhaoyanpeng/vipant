@@ -1,4 +1,5 @@
 import os
+import io
 import glob
 import json
 import torch
@@ -9,7 +10,9 @@ from pathlib import Path
 from tqdm import tqdm
 from itertools import cycle, islice, chain
 from einops import rearrange, repeat
+from pydub import AudioSegment
 
+import tensorflow as tf
 import multiprocessing as mp
 import torch.utils.data as data
 import torch.nn.functional as F
@@ -18,40 +21,15 @@ from . import PairImageSpectrogramTFRecords
 from .audio import (
     make_transform, _extract_kaldi_spectrogram
 )
-from .image_audio_gs import (
-    ImageAudioDatasetNpzGS, ImageAudioDatasetSrcGS
-)
 
-class ImageAudioDataset(data.Dataset):
-    def __init__(self, cfg, data_name, train):
-        data_path = f"{cfg.data_root}/{data_name}"
-        records = PairImageSpectrogramTFRecords(
-            data_path, 1, max_audio_len=cfg.max_audio_len
-        )
-        self.dataset = list()
-        for iline, record in enumerate(records):
-            self.dataset.append(record) 
-            if not train and iline + 1 == cfg.eval_samples:
-                break
-        self.length = len(self.dataset)
-
-    def _shuffle(self):
-        pass
-
-    def __getitem__(self, index):
-        return self.dataset[index] 
-
-    def __len__(self):
-        return self.length
-
-class ImageAudioDatasetNpz(data.Dataset):
-    """ `__getitem__' loads .npz from disk.
+class ImageAudioDatasetNpzGS(data.Dataset):
+    """ `__getitem__' loads .npz from disk (Google Storage).
     """
     def __init__(self, cfg, data_name, train):
         data_path = f"{cfg.data_root}/{data_name}.csv"
-        assert os.path.isfile(data_path), f"{data_path} is not a file."
+        assert tf.io.gfile.exists(data_path), f"{data_path} is not a file."
         self.dataset = list()
-        with open(data_path, "r") as fr:
+        with tf.io.gfile.GFile(data_path, "r") as fr:
             for iline, line in enumerate(fr):
                 record = json.loads(line)
                 self.dataset.append(record) 
@@ -78,6 +56,9 @@ class ImageAudioDatasetNpz(data.Dataset):
 
         aclip_file = f"{self.cfg.data_root}/{aclip}"
         frame_file = f"{self.cfg.data_root}/{frame}"
+
+        aclip_file = io.BytesIO(tf.io.gfile.GFile(aclip_file, "rb").read()) 
+        frame_file = io.BytesIO(tf.io.gfile.GFile(frame_file, "rb").read()) 
 
         images = np.load(frame_file)
         images = [images[key] for key in images.files if len(images[key]) != 0]
@@ -107,14 +88,18 @@ class ImageAudioDatasetNpz(data.Dataset):
     def __len__(self):
         return self.length
 
-class ImageAudioDatasetSrc(data.Dataset):
-    """ `__getitem__' loads raw file from disk.
+class ImageAudioDatasetSrcGS(data.Dataset):
+    """ `__getitem__' loads .npz from disk (Google Storage).
     """
     def __init__(self, cfg, data_name, train):
         data_path = f"{cfg.data_root}/{data_name}.csv"
-        assert os.path.isfile(data_path), f"{data_path} is not a file."
+        assert tf.io.gfile.exists(data_path), f"{data_path} is not a file."
+        # sox_io is the default backend on linux, but it doesn't support Byte streams
+        # soundfile supports Byte streams but doesn't support mp3, so we have to convert
+        # .mp3 to .wav streams and set the default backend to soundfile
+        torchaudio.set_audio_backend("soundfile") 
         self.dataset = list()
-        with open(data_path, "r") as fr:
+        with tf.io.gfile.GFile(data_path, "r") as fr:
             for iline, line in enumerate(fr):
                 record = json.loads(line)
                 self.dataset.append(record) 
@@ -155,7 +140,8 @@ class ImageAudioDatasetSrc(data.Dataset):
         aclip_file = f"{self.cfg.data_root}/{dir}/{akey}/{name}.{aclip}"
         frame_file = f"{self.cfg.data_root}/{dir}/{fkey}/{name}.{frame}"
 
-        max_audio_len = self.cfg.max_audio_len
+        aclip_file = io.BytesIO(tf.io.gfile.GFile(aclip_file, "rb").read()) 
+        frame_file = io.BytesIO(tf.io.gfile.GFile(frame_file, "rb").read()) 
 
         images = np.load(frame_file)
         images = [images[key] for key in images.files if len(images[key]) != 0]
@@ -164,7 +150,12 @@ class ImageAudioDatasetSrc(data.Dataset):
             idx = np.random.choice(len(images), 1)[0]
         else:
             idx = int(np.ceil(len(images) / 2)) - 1
-        image = images[idx] 
+        image = images[idx]
+
+        # mp3 -> wav byte stream
+        wav_bytes = io.BytesIO()
+        AudioSegment.from_file(aclip_file).export(wav_bytes, format="wav")
+        aclip_file = wav_bytes
         
         max_audio_len = self.cfg.max_audio_len
         audio = _extract_kaldi_spectrogram(
@@ -191,67 +182,3 @@ class ImageAudioDatasetSrc(data.Dataset):
     def __len__(self):
         return self.length
 
-class ImageAudioCollator:
-    def __init__(self, device=torch.device("cpu")):
-        # RuntimeError: cannot pin 'torch.cuda.FloatTensor' only dense CPU tensors can be pinned
-        # when pin_memory is true, the collator has to return CPU tensors
-        self.device = device
-
-    def __call__(self, records):
-        union = { 
-            k: [record.get(k) for record in records] for k in set().union(*records) 
-        } 
-        return (
-            np.concatenate(union["image"], axis=0), 
-            np.concatenate(union["audio"], axis=0),
-            union["name"],
-        )
-        union = {
-            "image": torch.tensor(
-                np.concatenate(union["image"], axis=0), device=self.device
-            ), 
-            "audio": torch.tensor(
-                np.concatenate(union["audio"], axis=0), device=self.device
-            ).unsqueeze(1), 
-            "name": union["name"],
-        }
-        return union
-
-def build_dataloader(cfg, data_name, shuffle=True, train=True):
-    ddp_mode = torch.distributed.is_initialized()
-    rcfg = cfg.running
-    from_gs = rcfg.data_root.startswith("gs://")
-    if data_name.startswith("src"):
-        if not from_gs:
-            dataset = ImageAudioDatasetSrc(rcfg, data_name, train)
-        else:
-            dataset = ImageAudioDatasetSrcGS(rcfg, data_name, train)
-    elif data_name.startswith("npz"):
-        if not from_gs:
-            dataset = ImageAudioDatasetNpz(rcfg, data_name, train)
-        else:
-            dataset = ImageAudioDatasetNpzGS(rcfg, data_name, train)
-    else:
-        dataset = ImageAudioDataset(rcfg, data_name, train)
-    if ddp_mode:
-        assert cfg.optimizer.batch_size % cfg.num_gpus == 0
-        sampler = torch.utils.data.distributed.DistributedSampler(
-            dataset, shuffle=shuffle
-        ) 
-        per_device_batch_size = cfg.optimizer.batch_size // cfg.num_gpus
-    else:
-        sampler = (
-            torch.utils.data.RandomSampler(dataset) if shuffle else
-            torch.utils.data.SequentialSampler(dataset)
-        )
-        per_device_batch_size = cfg.optimizer.batch_size
-    dataloader = torch.utils.data.DataLoader(
-        dataset, 
-        batch_size=per_device_batch_size,
-        collate_fn=ImageAudioCollator(),
-        num_workers=(0 if ddp_mode else cfg.num_proc),
-        pin_memory=True,
-        sampler=sampler,
-        drop_last=(True if ddp_mode else False),
-    )
-    return sampler, dataloader
