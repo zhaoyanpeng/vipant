@@ -19,3 +19,6 @@ from .audio_text import (
 from .audioset import (
     build_audioset_dataloader, build_audioset_label_map
 )
+from .audioset_ast import (
+    build_ast_dataloader
+)

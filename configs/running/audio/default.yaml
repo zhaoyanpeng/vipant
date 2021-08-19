@@ -1,5 +1,8 @@
 # kaldi
 max_len: 1000 # seq len 
+norms: [] 
+eval_norms: False
+normalized: False
 frame_length: 25
 frame_shift: 10
 window_type: hamming

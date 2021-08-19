@@ -25,10 +25,19 @@ class BCELossHead(LossHead):
         self.normalized = False
         assert "output_dim" in kwargs, f"`the label number` is not found in `kwargs`"
         nlabel = kwargs["output_dim"]
-        self.linear = nn.Sequential(
-            LayerNorm(cfg.embed_dim), 
-            nn.Linear(cfg.embed_dim, nlabel),
-        )  
+        layers = list()
+        embed_dim = cfg.embed_dim or cfg.width
+        sizes = [embed_dim] + list(cfg.layers) + [nlabel]
+        for i in range(len(sizes) - 2):
+            layers.extend([
+                LayerNorm(sizes[i]),
+                nn.Linear(sizes[i], sizes[i + 1]),
+            ])
+        layers.extend([
+            LayerNorm(sizes[-2]),
+            nn.Linear(sizes[-2], sizes[-1], bias=False)
+        ])
+        self.linear = nn.Sequential(*layers)
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         self.loss_fn = nn.BCEWithLogitsLoss()
         self.reduce = False 
@@ -46,13 +55,14 @@ class BCELossHead(LossHead):
         self.audios.append(x1)
         logit_scale = self.logit_scale.exp()
         logits_per_x1 = logit_scale * self.linear(x1)
+        loss_mean_x1 = self.loss_fn(logits_per_x1, x2.float())
         predictions = torch.sigmoid(logits_per_x1)
         self.x1s.append(predictions)
         self.x2s.append(x2)
         names = kwargs.get("names", None)
         if names is not None:
             self.ids.extend(names)
-        return None 
+        return loss_mean_x1
 
     def report(self, gold_file=None, **kwargs):
         x1s = torch.cat(self.x1s).cpu().numpy()

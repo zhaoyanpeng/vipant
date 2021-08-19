@@ -15,7 +15,6 @@ epochs: 1000
 save_epoch: False
 clf: True
 imagine: False
-weighted_sampling: False
 # vision backbone
 resolution: ${model.image.resolution}
 # audio backbone

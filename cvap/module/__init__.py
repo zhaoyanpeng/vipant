@@ -2,6 +2,7 @@ from .transformer import Transformer # has to be the first because the following
 # better API
 from .val import build_encoder_module, ENCODER_MODULES_REGISTRY, interp_clip_vp_embedding
 # deprecated API
+from .deit import PatchEmbed, DistilledVisionTransformer
 from .vit import VisualTransformer
 from .txt import TextualTransformer
 from .resnet import ModifiedResNet
