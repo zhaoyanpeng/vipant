@@ -65,7 +65,9 @@ class Monitor(object):
         self.echo(f"Total {len(label_map)} sound classes.")
         data_name = rcfg.eval_name if self.cfg.eval else rcfg.data_name
         _, self.dataloader = build_dataloader(
-            self.cfg, data_name, label_map, shuffle=(not self.cfg.eval), train=(not self.cfg.eval)
+            self.cfg, data_name, label_map, shuffle=(
+                not self.cfg.eval and not rcfg.audio.eval_norms
+            ), train=(not self.cfg.eval)
         )
         self.echo(f"Instantiate main dataloader from `{data_name}': total {len(self.dataloader)} batches.")
         self.gold_file = f"{rcfg.data_root}/{data_name}.csv"
@@ -109,7 +111,7 @@ class Monitor(object):
         audios = torch.tensor(batch[1], device=self.device).unsqueeze(1)
         text   = torch.tensor(batch[2], device=self.device) # (c, h, w)
         labels = torch.tensor(batch[3], device=self.device) # (c, h, w)
-        if images.shape[-1] != self.cfg.running.resolution:
+        if images.shape[-1] != self.cfg.running.resolution and list(images.shape[1:]) != [1, 1, 1]:
             images = F.interpolate(
                 images,
                 self.cfg.running.resolution,
@@ -148,6 +150,11 @@ class Monitor(object):
 
             if self.cfg.optimizer.use_lars:
                 adjust_learning_rate(self.cfg.optimizer, self.optimizer, self.dataloader, step)
+            if self.cfg.optimizer.warmup and self.total_step <= 1000 and self.total_step % 50 == 0:
+                lr = ((self.total_step + 1) / 1000) * self.cfg.optimizer.lr
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = lr
+                self.echo(f"warmup lr: {lr:.2e}")
 
             self.optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast():
@@ -206,6 +213,7 @@ class Monitor(object):
         if isinstance(self.model, DistributedDataParallel):
             dataloader.sampler.set_epoch(iepoch)
             nchunk = self.cfg.num_gpus
+        peep_rate = max(10, (len(dataloader) // 10))
         start_time = time.time()
         for ibatch, batch in enumerate(dataloader):
             if nsample >= samples:
@@ -217,7 +225,7 @@ class Monitor(object):
             loss = self.model(images, audios, labels, device_ids=device_ids, names=names)
             nsample += images.shape[0] * nchunk
             losses += loss
-            if self.cfg.rank == 0 and (ibatch + 1) % self.cfg.running.peep_rate == 0:
+            if self.cfg.rank == 0 and (ibatch + 1) % peep_rate == 0:
                 self.echo(
                     f"step {ibatch}\t" + #gnorm {grad_norm():.2f} " +
                     f"loss {losses / (ibatch + 1):.8f} " + 
@@ -271,8 +279,7 @@ class Monitor(object):
             self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
                 self.optimizer, steps, gamma=0.5
             )
-        debug = False 
-        if not debug:
+        if not self.cfg.verbose:
             return
         self.echo(f"Gradienting The Following Parameters:")
         for k, v in self.model.named_parameters():

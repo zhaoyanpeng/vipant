@@ -38,7 +38,10 @@ class BCELossHead(LossHead):
             nn.Linear(sizes[-2], sizes[-1], bias=False)
         ])
         self.linear = nn.Sequential(*layers)
-        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.logit_scale = (
+            nn.Parameter(torch.ones([]) * np.log(1 / 0.07)) if cfg.scaling else
+            torch.ones([], requires_grad=False) * np.log(1 / 1)
+        )
         self.loss_fn = nn.BCEWithLogitsLoss()
         self.reduce = False 
     

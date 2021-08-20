@@ -105,7 +105,7 @@ class AudioSetClassifier(nn.Module):
             local_cfg, audio_head_sd, loss_head_sd = load_checkpoint()
             from_scratch, image_head_sd, _, _ = load_clip(None)
 
-            self.image_head = build_image_head(self.cfg.model.image)
+            self.image_head = build_image_head(local_cfg.model.image)
             if not from_scratch:
                 self.image_head.copy_state_dict(image_head_sd)
             else:
@@ -114,7 +114,7 @@ class AudioSetClassifier(nn.Module):
             self.audio_head = build_audio_head(local_cfg.model.audio)
             self.audio_head.load_state_dict(audio_head_sd)
 
-            self.loss_head = build_loss_head(self.cfg.model.loss, **kwargs)
+            self.loss_head = build_loss_head(local_cfg.model.loss, **kwargs)
             self.loss_head.load_state_dict(loss_head_sd)
 
             self.cuda(self.cfg.rank) 

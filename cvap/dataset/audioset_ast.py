@@ -22,28 +22,8 @@ import torch.nn.functional as F
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
 )
+from .ast import print_label_dist, ASTSrc 
 from clip import tokenize
-
-def print_label_dist(cfg, echo, label_counts, label_map, ncol=30):
-    def short_name(x):
-        if len(x) > 15:
-            return x[:13] + ".."
-        return x
-    data = list(itertools.chain(*[
-        [short_name(label_map[i]), int(v)] for i, v in enumerate(label_counts)
-    ]))
-    total_num_instances = sum(data[1::2])
-    data.extend([None] * (ncol - (len(data) % ncol)))
-    data = itertools.zip_longest(*[data[i::ncol] for i in range(ncol)])
-    table = tabulate(
-        data,
-        headers=["category", "#"] * (ncol // 2),
-        tablefmt="pipe",
-        numalign="right",
-        stralign="center",
-    )
-    msg = colored(table, "cyan")
-    echo(f"Distribution of instances among all {len(label_map)} categories:\n{msg}")
 
 class AudiosetDatasetNpz(data.Dataset):
     """ `__getitem__' loads .npz from disk.
@@ -292,7 +272,8 @@ def build_ast_dataloader(cfg, data_name, label_map, shuffle=True, train=True):
     elif data_name.startswith("npz"):
         dataset = AudiosetDatasetNpz(rcfg, data_name, train, label_map, weighted)
     else:
-        raise ValueError(f"unrecognized data file `{data_name}`.")
+        dataset = ASTSrc(rcfg, data_name, train, label_map, weighted)
+        #raise ValueError(f"unrecognized data file `{data_name}`.")
     if ddp_mode:
         assert cfg.optimizer.batch_size % cfg.num_gpus == 0
         sampler = torch.utils.data.distributed.DistributedSampler(

@@ -34,6 +34,8 @@ def make_transform(cfg):
 
 class ToTensorKeepdim(ToTensor):
     def __call__(self, x):
+        if isinstance(x, torch.Tensor):
+            return x
         x = super(ToTensorKeepdim, self).__call__(x[..., None])
         return x.squeeze_(0)
 

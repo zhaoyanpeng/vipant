@@ -132,7 +132,7 @@ class DeiTAudioHead(nn.Module):
             **kwargs
         )
 
-    def copy_state_dict(self, state_dict):
+    def copy_state_dict(self, state_dict, time_first):
         excluded = ["patch_embed.proj.weight", "pos_embed"]
         new_dict = self.encoder.state_dict()
         old_dict = {k: v for k, v in state_dict.items() if k not in excluded and k in new_dict}
@@ -157,7 +157,7 @@ class DeiTAudioHead(nn.Module):
             -1, num_pos, num_pos, pos_dim
         ).permute(0, 3, 1, 2)
 
-        time_first = True # time_first is more reasonable: conv scans inputs left-to-right and top-to-down 
+        #time_first = False # time_first is more reasonable: conv scans inputs left-to-right and top-to-down 
         if nrow <= num_pos: # time
             left = int(round(0.5 * (num_pos- nrow)))
             ptensor = (

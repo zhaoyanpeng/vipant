@@ -1,5 +1,6 @@
 use_lars: True 
 name: Adam
+warmup: True
 lr: 0.00001
 weight_decay: 1e-6
 max_norm: 0.5 

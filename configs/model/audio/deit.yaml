@@ -4,6 +4,7 @@ from_scratch: False
 embed_dim: ${model.image.embed_dim}
 meme_path: 'facebookresearch/deit:main'
 meme_name: 'deit_base_distilled_patch16_224'
+time_first: True
 resolution: 
 - ${running.max_audio_len}
 - ${running.num_mel_bins} 

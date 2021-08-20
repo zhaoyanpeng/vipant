@@ -159,7 +159,7 @@ class ASTClassifier(nn.Module):
                     self.echo("Initialize audio encoder from `audio_head`.")
                 elif not from_scratch:
                     if with_meme: # higher priority
-                        self.audio_head.copy_state_dict(meme_image_head_sd)
+                        self.audio_head.copy_state_dict(meme_image_head_sd, self.cfg.model.audio.time_first)
                         self.echo("Initialize audio encoder from `meme_image_head`.")
                     else:
                         self.audio_head.copy_state_dict(image_head_sd)

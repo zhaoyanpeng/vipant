@@ -3,6 +3,7 @@ model_root: "/net/nfs2.mosaic/yann/model/cvap"
 model_name: "test"
 model_file: "00000204.pth"
 monitor: DPMonitor
+verbose: False
 seed: 1213
 eval: True 
 rank: -1
