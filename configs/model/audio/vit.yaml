@@ -2,6 +2,8 @@ name: 'AudioHead'
 freeze: False
 from_scratch: False
 embed_dim: ${model.image.embed_dim}
+meme_path: ''
+meme_name: ''
 resolution: 
 - ${running.max_audio_len}
 - ${running.num_mel_bins} 

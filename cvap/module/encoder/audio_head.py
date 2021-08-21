@@ -131,8 +131,9 @@ class DeiTAudioHead(nn.Module):
             norm_layer=partial(nn.LayerNorm, eps=1e-6),
             **kwargs
         )
+        self.time_first = cfg.time_first
 
-    def copy_state_dict(self, state_dict, time_first):
+    def copy_state_dict(self, state_dict):
         excluded = ["patch_embed.proj.weight", "pos_embed"]
         new_dict = self.encoder.state_dict()
         old_dict = {k: v for k, v in state_dict.items() if k not in excluded and k in new_dict}
@@ -157,7 +158,9 @@ class DeiTAudioHead(nn.Module):
             -1, num_pos, num_pos, pos_dim
         ).permute(0, 3, 1, 2)
 
-        #time_first = False # time_first is more reasonable: conv scans inputs left-to-right and top-to-down 
+        time_first = self.time_first # time_first is more reasonable: conv scans inputs left-to-right and top-to-down 
+        if not time_first:
+            self.encoder.patch_embed.img_size = self.encoder.patch_embed.img_size[::-1]
         if nrow <= num_pos: # time
             left = int(round(0.5 * (num_pos- nrow)))
             ptensor = (
@@ -200,6 +203,8 @@ class DeiTAudioHead(nn.Module):
         return n_o, o_n
 
     def forward(self, images, *args, **kwargs):
+        if not self.time_first: # default (..., time, bins)
+            images = images.transpose(-1, -2)
         cls_z, distilled_z = self.encoder.forward_features(images)
         z = (cls_z + distilled_z) / 2
         if kwargs.get("normalized", False):

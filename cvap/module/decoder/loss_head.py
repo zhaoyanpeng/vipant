@@ -199,7 +199,10 @@ class LossHead(nn.Module):
 class CELossHead(LossHead):
     def __init__(self, cfg, **kwargs):
         super().__init__()
-        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.logit_scale = (
+            nn.Parameter(torch.ones([]) * np.log(1 / 0.07)) if cfg.scaling else
+            torch.ones([], requires_grad=False) * np.log(1 / 1)
+        )
         self.loss_fn = nn.CrossEntropyLoss()
         self.reduce = False 
     

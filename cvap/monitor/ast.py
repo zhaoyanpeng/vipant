@@ -18,6 +18,21 @@ from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_ast_dataloader as build_dataloader
 from ..dataset import build_audioset_label_map as build_label_map
 
+class AverageMeter(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.sum = self.count = 0
+
+    def __call__(self, val, n=1):
+        self.count += n
+        self.sum += val * n
+
+    @property
+    def average(self):
+        return self.sum / self.count
+
 class Monitor(object):
     def __init__(self, cfg, echo, device):
         super(Monitor, self).__init__()
@@ -92,6 +107,7 @@ class Monitor(object):
                 self.echo(f"{report}")
                 return None 
         self.echo("Training started...")
+        self.ast_loss = AverageMeter()
         self.last_time = 0.
         self.total_loss = 0
         self.total_step = 0
@@ -151,7 +167,7 @@ class Monitor(object):
             if self.cfg.optimizer.use_lars:
                 adjust_learning_rate(self.cfg.optimizer, self.optimizer, self.dataloader, step)
             if self.cfg.optimizer.warmup and self.total_step <= 1000 and self.total_step % 50 == 0:
-                lr = ((self.total_step + 1) / 1000) * self.cfg.optimizer.lr
+                lr = ((self.total_step + 0) / 1000) * self.cfg.optimizer.lr
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = lr
                 self.echo(f"warmup lr: {lr:.2e}")
@@ -174,6 +190,7 @@ class Monitor(object):
             self.total_step += 1
             self.total_loss += loss.detach()
             self.total_inst += images.shape[0] * nchunk
+            self.ast_loss(loss.detach(), images.shape[0])
             if self.cfg.rank == 0 and self.total_step % self.cfg.running.peep_rate == 0:
                 def grad_norm():
                     return sum(
@@ -184,7 +201,7 @@ class Monitor(object):
                 self.echo(
                     f"epoch {iepoch:>4} step {self.total_step}\t" + #gnorm {grad_norm():.2f} " +
                     f"lr_w {lr_w:.2e} lr_b {lr_b:.2e} loss {self.total_loss / self.total_step:.3f} " + 
-                    f"{self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
+                    f"ast-loss {self.ast_loss.average:.4f} {self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
                 )
             if self.total_step % self.cfg.running.save_rate == 0 or (
                     self.cfg.running.save_epoch and self.total_step % len(self.dataloader) == 0
@@ -205,6 +222,7 @@ class Monitor(object):
 
         if not self.cfg.optimizer.use_lars:
             self.scheduler.step()
+        self.ast_loss.reset()
         self.timeit(all_time, show=True)
         
     def infer(self, dataloader, samples=float("inf"), iepoch=0):

@@ -1,10 +1,11 @@
-name: 'BCEAndCELossHead'
+name: 'ImaginedCLFLossHead'
 lambd_ce: 1. 
+layers: 
+- ${model.image.embed_dim}
+bias: False
 ce:
     name: 'CELossHead'
-    layers: []
-    scaling: True 
-    bias: False
+    scaling: True
 bce:
     name: 'BCELossHead'
     embed_dim: ${model.audio.embed_dim}

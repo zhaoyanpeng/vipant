@@ -14,7 +14,10 @@ batch_size: 64
 epochs: 1000 
 save_epoch: False
 clf: True
+np_rnd: False
 imagine: False
+mixup_rate: 0.5
+weighted_sampling: False
 # vision backbone
 resolution: ${model.image.resolution}
 # audio backbone

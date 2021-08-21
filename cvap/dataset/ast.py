@@ -10,6 +10,7 @@ import numpy as np
 import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
+from PIL import Image as PILImage
 from itertools import cycle, islice, chain
 from einops import rearrange, repeat
 from collections import defaultdict
@@ -19,6 +20,9 @@ from termcolor import colored
 import multiprocessing as mp
 import torch.utils.data as data
 import torch.nn.functional as F
+from torchvision.transforms import (
+    InterpolationMode, Compose, Resize, CenterCrop, ToTensor, Normalize
+)
 
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
@@ -45,6 +49,15 @@ def print_label_dist(cfg, echo, label_counts, label_map, ncol=30):
     )
     msg = colored(table, "cyan")
     echo(f"Distribution of instances among all {len(label_map)} categories:\n{msg}")
+
+def make_image_transform(n_px):
+    return Compose([
+        Resize(n_px, interpolation=InterpolationMode.BICUBIC),
+        CenterCrop(n_px),
+        lambda image: image.convert("RGB"),
+        ToTensor(),
+        Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+    ])
 
 class ASTSrc(data.Dataset):
     """ `__getitem__' loads raw file from disk.
@@ -83,6 +96,7 @@ class ASTSrc(data.Dataset):
         self.cfg = cfg
         
         acfg = cfg.audio
+        self.transform_image = make_image_transform(cfg.resolution)
         self.transform_audio, self.transform_fbank = make_transform(acfg)        
         self.kaldi_params = {
             "htk_compat": True, 
@@ -130,8 +144,8 @@ class ASTSrc(data.Dataset):
         return item, label, aclip_file, frame_file
 
     def _img2numpy(self, fname):
-        if fname is not None: # TODO
-            image = np.array([[[1]]]) 
+        if fname is not None: 
+            image = self.transform_image(PILImage.open(fname)).cpu().numpy() 
         else:
             image = np.array([[[1]]]) 
         return image
@@ -143,8 +157,11 @@ class ASTSrc(data.Dataset):
         wf = wf[:1] #wf.mean(0, keepdim=True)
         wf = wf - wf.mean()
 
-        if self.train and np.random.random() < self.cfg.mixup_rate:
-            idx_mix = np.random.randint(self.length)
+        sampler = np.random if self.cfg.np_rnd else random 
+
+        #if self.train and sampler.random() < self.cfg.mixup_rate:
+        if not self.cfg.audio.eval_norms and self.train and sampler.random() < self.cfg.mixup_rate:
+            idx_mix = sampler.randint(0, self.length if self.cfg.np_rnd else self.length - 1)
             item_mix, label_mix, aclip_file, _ = self._process_item(idx_mix)
             wf_mix, _ = torchaudio.load(aclip_file)
             wf_mix = wf_mix[:1] #wf_mix.mean(0, keepdim=True)
@@ -180,14 +197,14 @@ class ASTSrc(data.Dataset):
     def __getitem__(self, index):
         item, audio, image, label = self._wav2fbank(index)
 
-        #if not self.cfg.audio.eval_norms and 
-        if self.train and self.transform_fbank is not None:
+        #if self.train and self.transform_fbank is not None:
+        if not self.cfg.audio.eval_norms and self.train and self.transform_fbank is not None:
             audio = self.transform_fbank(audio)
 
         if not self.cfg.audio.eval_norms and len(self.audio_norms) == 2:
             mean, std = self.audio_norms
             audio = (audio - mean) / (std * 2) 
-        
+
         image = image[None]
         audio = audio[None]
         item.update({"image": image, "audio": audio, "label": label})
