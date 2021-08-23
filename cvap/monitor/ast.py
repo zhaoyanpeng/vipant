@@ -198,10 +198,11 @@ class Monitor(object):
                     ).item() ** 0.5
                 lr_w = self.optimizer.param_groups[0]['lr']
                 lr_b = self.optimizer.param_groups[1]['lr']
+                msg = self.model.report(**{"nstep": self.total_step})
                 self.echo(
                     f"epoch {iepoch:>4} step {self.total_step}\t" + #gnorm {grad_norm():.2f} " +
                     f"lr_w {lr_w:.2e} lr_b {lr_b:.2e} loss {self.total_loss / self.total_step:.3f} " + 
-                    f"ast-loss {self.ast_loss.average:.4f} {self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
+                    f"ast-loss {self.ast_loss.average:.4f} {msg} {self.total_inst / (time.time() - self.start_time):.2f} samples/s"
                 )
             if self.total_step % self.cfg.running.save_rate == 0 or (
                     self.cfg.running.save_epoch and self.total_step % len(self.dataloader) == 0
@@ -293,7 +294,8 @@ class Monitor(object):
             self.optimizer = torch.optim.Adam(
                 param_groups, self.cfg.optimizer.lr, weight_decay=5e-7, betas=(0.95, 0.999)
             )
-            steps = [2, 3, 4, 5] if len(self.dataloader.dataset) > 2e5 else [10, 15, 20, 25] 
+            steps = list(self.cfg.optimizer.steps)
+            steps = [self.cfg.opeimizer.epochs] if len(steps) == 0 else steps
             self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
                 self.optimizer, steps, gamma=0.5
             )

@@ -4,6 +4,7 @@ import glob
 import json
 import torch
 import random
+import warnings
 import itertools
 import torchaudio
 import numpy as np
@@ -145,7 +146,15 @@ class ASTSrc(data.Dataset):
 
     def _img2numpy(self, fname):
         if fname is not None: 
-            image = self.transform_image(PILImage.open(fname)).cpu().numpy() 
+            try:
+                image = PILImage.open(fname)
+            except Exception as e:
+                h = w = self.cfg.resolution
+                image = PILImage.fromarray(
+                    (np.random.rand(h, w, 3) * 256).astype(np.uint8)
+                )
+                warnings.warn(f"use random image instead because `{e}`.")
+            image = self.transform_image(image).cpu().numpy()
         else:
             image = np.array([[[1]]]) 
         return image

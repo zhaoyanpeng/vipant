@@ -159,6 +159,7 @@ class ImaginedCLFLossHead(LossHead):
         self.normalized = False
         self.loss_ce = build_loss_head(cfg.ce, **kwargs)
         self.loss_bce = build_loss_head(cfg.bce, **kwargs)
+        self._total_loss = {"ce": 0., "bce": 0.} # record loss
         self.lambd_ce = cfg.lambd_ce
         self.reduce = True 
         # audio -> vision
@@ -175,6 +176,12 @@ class ImaginedCLFLossHead(LossHead):
             nn.Linear(sizes[-2], sizes[-1], bias=cfg.bias)
         ])
         self.a2v = nn.Sequential(*layers)
+
+    def stats(self, nstep=1, **kwargs):
+        msg = " ".join([
+            f"{k} {v / nstep:.3f}" for k, v in self._total_loss.items()
+        ])
+        return msg
 
     def report(self, gold_file=None):
         report_ce = ""
@@ -195,4 +202,6 @@ class ImaginedCLFLossHead(LossHead):
         loss_ce = self.loss_ce(self.a2v(x1), x3, *args, **kwargs)
         loss_bce = self.loss_bce(x1, x2, *args, **kwargs)
         loss = self.lambd_ce * loss_ce + loss_bce
+        self._total_loss["ce"] += loss_ce.detach()
+        self._total_loss["bce"] += loss_bce.detach()
         return loss

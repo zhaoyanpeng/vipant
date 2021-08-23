@@ -153,13 +153,14 @@ class DeiTAudioHead(nn.Module):
         nrow, ncol = self.encoder.patch_embed.grid_size
         old_pos_emb = state_dict["pos_embed"]
         num_pos, pos_dim = old_pos_emb.shape[1:]
-        num_pos = int(np.sqrt(num_pos - 1))
+
+        num_pos = int(np.sqrt(num_pos - 2))
         ptensor = old_pos_emb[:, 2:].reshape(
             -1, num_pos, num_pos, pos_dim
         ).permute(0, 3, 1, 2)
 
-        time_first = self.time_first # time_first is more reasonable: conv scans inputs left-to-right and top-to-down 
-        if not time_first:
+        time_first = self.time_first # time_first is more reasonable: conv scans inputs left-to-right and top-to-down
+        if not time_first: # skip the sanity check
             self.encoder.patch_embed.img_size = self.encoder.patch_embed.img_size[::-1]
         if nrow <= num_pos: # time
             left = int(round(0.5 * (num_pos- nrow)))
@@ -212,3 +213,113 @@ class DeiTAudioHead(nn.Module):
             #print(f"{threading.current_thread().ident} image --{kwargs.get('normalized', False)}")
         return z
 
+@AUDIO_HEADS_REGISTRY.register()
+class CLIP4ASTAudioHead(nn.Module):
+    def __init__(self, cfg, **kwargs):
+        super().__init__()
+        if isinstance(cfg.layers, (tuple, list, ListConfig)):
+            heads = cfg.width * 32 // 64
+            self.encoder = ModifiedResNet(
+                in_channels=1,
+                input_resolution=cfg.resolution,
+                output_dim=cfg.embed_dim,
+                layers=cfg.layers,
+                width=cfg.width,
+                heads=heads,
+            )
+        else:
+            heads = cfg.width // 64
+            self.encoder = VisualTransformer(
+                in_channels=1,
+                stride=cfg.stride,
+                input_resolution=cfg.resolution,
+                output_dim=cfg.embed_dim,
+                patch_size=cfg.patch_size,
+                layers=cfg.layers,
+                width=cfg.width,
+                heads=heads,
+            )
+        self.time_first = cfg.time_first
+
+    def copy_state_dict(self, state_dict):
+        excluded = ["conv1.weight", "positional_embedding", "attnpool.positional_embedding"]
+        new_dict = self.encoder.state_dict()
+        old_dict = {k: v for k, v in state_dict.items() if k not in excluded}
+        # conv1: 3 channels -> 1 channel
+        key = "conv1.weight"
+        old_conv_weight = state_dict[key]
+        new_conv_weight = new_dict[key]
+        if new_conv_weight.shape[2:] != old_conv_weight.shape[2:]:
+            old_conv_weight = F.interpolate(
+                old_conv_weight,
+                new_conv_weight.shape[2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+        old_dict[key] = old_conv_weight.mean(1, keepdim=True)
+        # interpolate positional embedding
+        if isinstance(self.encoder, ModifiedResNet):
+            key = "attnpool.positional_embedding"
+        else:
+            key = "positional_embedding"
+        nrow, ncol = self.encoder.position_resolution
+        old_pos_emb = state_dict[key]
+        num_pos, pos_dim = old_pos_emb.shape[:2]
+
+        num_pos = int(np.sqrt(num_pos - 1))
+        ptensor = old_pos_emb[1:].reshape(
+            -1, num_pos, num_pos, pos_dim
+        ).permute(0, 3, 1, 2)
+
+        time_first = self.time_first # time_first is more reasonable: conv scans inputs left-to-right and top-to-down 
+        if not time_first: # skip the sanity check
+            pass #self.encoder.patch_embed.img_size = self.encoder.patch_embed.img_size[::-1]
+        if nrow <= num_pos: # time
+            left = int(round(0.5 * (num_pos- nrow)))
+            ptensor = (
+                ptensor[:, :, left : left + nrow, :] if time_first else
+                ptensor[:, :, :, left : left + nrow]
+            )
+        else:
+            size = (nrow, num_pos) if time_first else (num_pos, nrow)
+            ptensor = F.interpolate(
+                ptensor,
+                size,
+                mode="bilinear",
+                align_corners=False,
+            )
+        if ncol <= num_pos: # feature
+            left = int(round(0.5 * (num_pos- ncol)))
+            ptensor = (
+                ptensor[:, :, :, left : left + ncol] if time_first else
+                ptensor[:, :, left : left + ncol, :]
+            )
+        else:
+            size = (nrow, ncol) if time_first else (ncol, nrow)
+            ptensor = F.interpolate(
+                ptensor,
+                size,
+                mode="bilinear",
+                align_corners=False,
+            )
+        new_pos_emb = ptensor.permute(0, 2, 3, 1).flatten(1, 2)
+        new_pos_emb = torch.cat((
+            old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
+        ), dim=0)
+        old_dict[key] = new_pos_emb
+
+        new_keys = set(new_dict.keys())
+        old_keys = set(old_dict.keys())
+        new_dict.update(old_dict)
+        self.encoder.load_state_dict(new_dict)
+        n_o = new_keys - old_keys
+        o_n = old_keys - new_keys
+        #print(f"{n_o}\n{o_n}")
+        return n_o, o_n
+
+    def forward(self, audios, *args, **kwargs):
+        z = self.encoder(audios)
+        if kwargs.get("normalized", False):
+            z = z / z.norm(dim=-1, keepdim=True)
+            #print(f"{threading.current_thread().ident} audio --{kwargs.get('normalized', False)}")
+        return z

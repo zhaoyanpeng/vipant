@@ -63,6 +63,8 @@ class ASTClassifier(nn.Module):
         )
 
     def report(self, gold_file=None, **kwargs):
+        if self.training:
+            return self.loss_head.stats(**kwargs) if hasattr(self.loss_head, "stats") else ""
         if not dist.is_initialized() or dist.get_rank() == 0:
             return self.loss_head.report(gold_file=gold_file, **kwargs)
         else:
