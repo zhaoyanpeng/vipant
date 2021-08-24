@@ -214,7 +214,7 @@ class DeiTAudioHead(nn.Module):
         return z
 
 @AUDIO_HEADS_REGISTRY.register()
-class CLIP4ASTAudioHead(nn.Module):
+class CLIPVisionEncoderAsAudioHead(nn.Module):
     def __init__(self, cfg, **kwargs):
         super().__init__()
         if isinstance(cfg.layers, (tuple, list, ListConfig)):

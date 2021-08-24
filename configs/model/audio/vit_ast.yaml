@@ -1,4 +1,4 @@
-name: 'CLIP4ASTAudioHead'
+name: 'CLIPVisionEncoderAsAudioHead'
 freeze: False
 from_scratch: False
 embed_dim: ${model.image.embed_dim}

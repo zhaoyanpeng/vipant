@@ -93,6 +93,8 @@ class ASTSrc(data.Dataset):
                         self.label_map[category][0]
                     ]
         self.audio_norms = cfg.audio.norms
+        # compatible with AudioSet and Balanced AudioSet
+        self.aclip_key = "clip" if "clip" in self.dataset[0] else "aclip"
         self.train = train
         self.cfg = cfg
         
@@ -112,7 +114,7 @@ class ASTSrc(data.Dataset):
         pass
 
     def _process_item(self, index):
-        akey = "clip"
+        akey = self.aclip_key
         fkey = "frame"
         sub_dir = self.dataset[index]["dir"] 
         name = self.dataset[index]["id"] 

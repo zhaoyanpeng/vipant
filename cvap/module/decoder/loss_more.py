@@ -205,3 +205,78 @@ class ImaginedCLFLossHead(LossHead):
         self._total_loss["ce"] += loss_ce.detach()
         self._total_loss["bce"] += loss_bce.detach()
         return loss
+
+class ImagineAndClassifyLossHead(LossHead):
+    # audio-vision contrastive learning task (maybe w/ supervised classification)
+    def __init__(self, cfg, **kwargs):
+        super().__init__()
+        self.loss_ce = self.loss_bce = None
+        self.normalized = False
+        self._total_loss = {}
+        if cfg.ce.alive:
+            self.loss_ce = build_loss_head(cfg.ce, **kwargs)
+            self._total_loss.update({"ce": 0.})
+        if cfg.bce.alive:
+            self.loss_bce = build_loss_head(cfg.bce, **kwargs)
+            self._total_loss.update({"bce": 0.})
+        self.lambd_ce = cfg.lambd_ce
+        self.reduce = True
+        # audio -> vision
+        self.a2v = nn.Identity()
+        if len(cfg.layers) > 0:
+            layers = list()
+            embed_dim = cfg.bce.embed_dim or cfg.bce.width
+            sizes = [embed_dim] + list(cfg.layers)
+            for i in range(len(sizes) - 2):
+                layers.extend([
+                    LayerNorm(sizes[i]),
+                    nn.Linear(sizes[i], sizes[i + 1]),
+                ])
+            layers.extend([
+                LayerNorm(sizes[-2]),
+                nn.Linear(sizes[-2], sizes[-1], bias=cfg.bias)
+            ])
+            self.a2v = nn.Sequential(*layers)
+
+    def stats(self, nstep=1, **kwargs):
+        msg = " ".join([
+            f"{k} {v / nstep:.3f}" for k, v in self._total_loss.items()
+        ])
+        return msg
+
+    def report(self, gold_file=None):
+        report_ce = report_bce = ""
+        if self.loss_ce is not None and hasattr(self.loss_ce, "x1s") and hasattr(self.loss_ce, "x2s"):
+            report_ce = self.loss_ce.report(gold_file=gold_file)
+        if self.loss_bce is not None:
+            report_bce = self.loss_bce.report(gold_file=gold_file)
+        return f"{report_ce}\n{report_bce}"
+
+    def infer(self, x1, x2, x3, *args, **kwargs):
+        loss_ce = loss_bce = 0.
+        if self.loss_ce is not None and x3 is not None:
+            loss_ce = self.loss_ce.infer(self.a2v(x1), x3, *args, **kwargs)
+        if self.loss_bce is not None:
+            loss_bce =  self.loss_bce.infer(x1, x2, *args, **kwargs)
+        loss_ce = loss_ce or 0.
+        loss_bce = loss_bce or 0.
+        return loss_ce + loss_bce
+
+    def forward(self, x1, x2, *args, x3=None, **kwargs):
+        """ x1 is (audio) features, x2 is (audio) labels, and x3 is mirror (image) features
+        """
+        if not self.training:
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                return self.infer(x1, x2, x3, *args, **kwargs)
+            return None
+
+        loss_ce = loss_bce = 0.
+        if self.loss_ce is not None and x3 is not None:
+            loss_ce = self.loss_ce(self.a2v(x1), x3, *args, **kwargs)
+            self._total_loss["ce"] += loss_ce.detach()
+        if self.loss_bce is not None:
+            loss_bce = self.loss_bce(x1, x2, *args, **kwargs)
+            self._total_loss["bce"] += loss_bce.detach()
+
+        loss = self.lambd_ce * loss_ce + loss_bce
+        return loss

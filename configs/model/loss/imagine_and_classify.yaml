@@ -1,0 +1,17 @@
+name: 'ImagineAndClassifyLossHead'
+lambd_ce: 1. 
+layers: 
+- ${model.image.embed_dim}
+bias: False
+ce:
+    name: 'CELossHead'
+    alive: True
+    scaling: True
+bce:
+    name: 'BCELossHead'
+    alive: True
+    embed_dim: ${model.audio.embed_dim}
+    width: ${model.audio.width}
+    layers: []
+    scaling: True 
+    bias: False
