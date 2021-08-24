@@ -19,6 +19,7 @@ import torch.nn.functional as F
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
 )
+from .audioset_cap import AudioCapDatasetSrc
 from clip import tokenize
 
 class AudiosetDatasetNpz(data.Dataset):
@@ -207,8 +208,7 @@ class ImageAudioCollator:
             """
         elif isinstance(text_list[0][0], list): # test
             text_list = list(itertools.chain.from_iterable(text_list))
-            name = list(itertools.chain.from_iterable(name))
-            #label = # list of label lists 
+            #name = list(itertools.chain.from_iterable(name))
         else:
             raise ValueError(f"unrecognized `{type(text_list[0][0])}`")
         # https://stackoverflow.com/a/38619333
@@ -272,6 +272,8 @@ def build_audioset_dataloader(cfg, data_name, label_map, shuffle=True, train=Tru
         dataset = AudiosetDatasetSrc(rcfg, data_name, train, label_map)
     elif data_name.startswith("npz"):
         dataset = AudiosetDatasetNpz(rcfg, data_name, train, label_map)
+    elif data_name.startswith("audiocaps"): # audio captioning
+        dataset = AudioCapDatasetSrc(rcfg, data_name, train, label_map)
     else:
         raise ValueError(f"unrecognized data file `{data_name}`.")
     if ddp_mode:

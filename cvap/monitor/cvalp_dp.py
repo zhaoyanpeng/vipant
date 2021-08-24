@@ -24,14 +24,41 @@ class Monitor(object):
         self.cfg = cfg
         self.echo = echo
         self.device = device
-        self.build_data()
+        output_dim = self.build_data()
+        if self.cfg.running.audio.eval_norms:
+            self.eval_norms()
+            return # mean & std of the data
         model = Model(cfg, echo)
-        tunable_params = model.build()
+        tunable_params = model.build(**{"output_dim": output_dim})
         self.model = DistributedDataParallel(
             model, device_ids=[cfg.rank], find_unused_parameters=True
         ) if torch.distributed.is_initialized() else model 
         self.model.train(not cfg.eval)
         self.build_optimizer(tunable_params)
+
+    def eval_norms(self):
+        self.echo("Evaluate mean and std...")
+        cnt = 0.
+        som = torch.tensor(0., device=self.device)
+        sos = torch.tensor(0., device=self.device)
+        som_list, sos_list = list(), list()
+        for step, batch in enumerate(self.dataloader):
+            _, audios, _, _, _ = self.make_batch(batch)
+            bsz = audios.shape[0]
+            new_cnt = cnt + bsz
+            mean = audios.mean(axis=[2, 3])
+            mean_sq = (audios ** 2).mean(axis=[2, 3])
+            """ incremental update might be numerically unstable
+            som = (som * cnt + mean.sum()) / new_cnt
+            sos = (sos * cnt + mean_sq.sum()) / new_cnt
+            """
+            som_list.append(mean)
+            sos_list.append(mean_sq)
+            self.echo(f"step {step}")
+        som = torch.cat(som_list, 0).mean(axis=[0])
+        sos = torch.cat(sos_list, 0).mean(axis=[0])
+        std = (sos - som ** 2).sqrt()
+        self.echo(f"MEAN: {som.cpu().tolist()} STD: {std.cpu().tolist()}")
 
     def build_data(self):
         rcfg = self.cfg.running
@@ -52,8 +79,11 @@ class Monitor(object):
         if self.evalloader is not None:
             self.echo(f"Will do evaluation every {rcfg.save_rate} steps on {len(self.evalloader)} batches.")
             self.gold_file = f"{rcfg.data_root}/{eval_name}.csv"
+        return len(label_map)
 
     def learn(self):
+        if self.cfg.running.audio.eval_norms:
+            return # `eval_norms` is the only task
         if not self.model.training:
             self.echo("Evaluating started...")
             with torch.no_grad():
@@ -80,7 +110,7 @@ class Monitor(object):
         audios = torch.tensor(batch[1], device=self.device).unsqueeze(1)
         text   = torch.tensor(batch[2], device=self.device) # (c, h, w)
         labels = torch.tensor(batch[3], device=self.device) # (c, h, w)
-        if images.shape[-1] != self.cfg.running.resolution:
+        if images.shape[-1] != self.cfg.running.resolution and list(images.shape[1:]) != [1, 1, 1]:
             images = F.interpolate(
                 images,
                 self.cfg.running.resolution,
@@ -117,10 +147,13 @@ class Monitor(object):
             images, audios, text, _, _ = self.make_batch(batch)
             self.timeit(all_time, key="data")
 
-            #print(images.size(), audios.size())
-            #break
-
-            adjust_learning_rate(self.cfg.optimizer, self.optimizer, self.dataloader, step)
+            if self.cfg.optimizer.use_lars:
+                adjust_learning_rate(self.cfg.optimizer, self.optimizer, self.dataloader, step)
+            if self.cfg.optimizer.warmup and self.total_step <= 1000 and self.total_step % 50 == 0:
+                lr = ((self.total_step + 0) / 1000) * self.cfg.optimizer.lr
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = lr
+                self.echo(f"warmup lr: {lr:.2e}")
 
             self.optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast():
@@ -147,12 +180,15 @@ class Monitor(object):
                     ).item() ** 0.5
                 lr_w = self.optimizer.param_groups[0]['lr']
                 lr_b = self.optimizer.param_groups[1]['lr']
+                msg = self.model.report(**{"nstep": self.total_step})
                 self.echo(
                     f"epoch {iepoch:>4} step {self.total_step}\t" + #gnorm {grad_norm():.2f} " +
                     f"lr_w {lr_w:.2e} lr_b {lr_b:.2e} loss {self.total_loss / self.total_step:.3f} " + 
-                    f"{self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
+                    f"{msg} {self.total_inst / (time.time() - self.start_time):.2f} samples/s"
                 )
-            if self.total_step % self.cfg.running.save_rate == 0: # distributed eval
+            if self.total_step % self.cfg.running.save_rate == 0 or (
+                    self.cfg.running.save_epoch and self.total_step % len(self.dataloader) == 0
+                ): # distributed eval
                 report = ""
                 if self.evalloader is not None:
                     self.model.train(False)
@@ -166,14 +202,18 @@ class Monitor(object):
                 if self.cfg.rank == 0:
                     self.save()
             self.timeit(all_time, key="report")
+
+        if not self.cfg.optimizer.use_lars:
+            self.scheduler.step()
         self.timeit(all_time, show=True)
         
     def infer(self, dataloader, samples=float("inf"), iepoch=0):
-        nsample, nchunk, nbatch = 0, 1, len(dataloader) 
+        losses, nsample, nchunk, nbatch = 0, 0, 1, len(dataloader)
         device_ids = [i for i in range(self.cfg.num_gpus)]
         if isinstance(self.model, DistributedDataParallel):
             dataloader.sampler.set_epoch(iepoch)
             nchunk = self.cfg.num_gpus
+        peep_rate = max(10, (len(dataloader) // 10))
         start_time = time.time()
         for ibatch, batch in enumerate(dataloader):
             if nsample >= samples:
@@ -184,6 +224,13 @@ class Monitor(object):
             #print(f"{nsample}\t{ibatch}/{nbatch} done {msg}")
             loss = self.model(images, audios, text, device_ids=device_ids, names=names)
             nsample += images.shape[0] * nchunk
+            losses += loss
+            if self.cfg.rank == 0 and (ibatch + 1) % peep_rate == 0:
+                self.echo(
+                    f"step {ibatch}\t" + #gnorm {grad_norm():.2f} " +
+                    f"loss {losses / (ibatch + 1):.8f} " +
+                    f"{nsample / (time.time() - start_time):.2f} samples/s"
+                )
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
         self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
         return model.report(gold_file=self.gold_file)
@@ -216,15 +263,24 @@ class Monitor(object):
             {"params": [p for p in self.params if p.ndim > 1]},
             {"params": [p for p in self.params if p.ndim < 2]},
         ]
-        self.optimizer = LARS(
-            param_groups, 
-            lr=0., 
-            weight_decay=self.cfg.optimizer.weight_decay,
-            weight_decay_filter=exclude_bias_or_norm,
-            lars_adaptation_filter=exclude_bias_or_norm,
-        )
-        debug = False 
-        if not debug:
+        if self.cfg.optimizer.use_lars:
+            self.optimizer = LARS(
+                param_groups,
+                lr=0.,
+                weight_decay=self.cfg.optimizer.weight_decay,
+                weight_decay_filter=exclude_bias_or_norm,
+                lars_adaptation_filter=exclude_bias_or_norm,
+            )
+        else:
+            self.optimizer = torch.optim.Adam(
+                param_groups, self.cfg.optimizer.lr, weight_decay=5e-7, betas=(0.95, 0.999)
+            )
+            steps = list(self.cfg.optimizer.steps)
+            steps = [self.cfg.opeimizer.epochs] if len(steps) == 0 else steps
+            self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
+                self.optimizer, steps, gamma=0.5
+            )
+        if not self.cfg.verbose:
             return
         self.echo(f"Gradienting The Following Parameters:")
         for k, v in self.model.named_parameters():

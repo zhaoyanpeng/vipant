@@ -123,13 +123,15 @@ class LossHead(nn.Module):
             mean = r21.float().mean() + 1
 
             p_21 = f"T->A: t1 = {t21_1:2.2f} t5 = {t21_5:2.2f} mR = {mean:2.2f}" 
+            gold_file = None
         else:
             p_12, p_21 = f"{x1s.shape}x{x2s.shape}", "-"
+            gold_file = None
 
         # stats per class
         if gold_file is not None:
             nsample = x1s.size(0) 
-            sample_by_classname, classname_by_sample = self._gold_cluster(gold_file, nsample)
+            sample_by_classname, classname_by_sample = self._gold_cluster(gold_file, nsample, verbose=False)
 
             def topk_overlap(x, k=1):
                 """ x has to be a 2d matrix: (sample_idx, sorted_sample_idx)
@@ -370,24 +372,38 @@ class VALCELossHead(LossHead):
     def __init__(self, cfg, **kwargs):
         super().__init__()
         self.loss_head_va = self.loss_head_lv = self.loss_head_al = None
+        self._total_loss = {} # record loss
         if cfg.va:
             self.loss_head_va = CELossHead(cfg, **kwargs)
+            self._total_loss.update({"va": 0.})
         if cfg.lv:
             self.loss_head_lv = CELossHead(cfg, **kwargs) 
+            self._total_loss.update({"lv": 0.})
         if cfg.al:
             self.loss_head_al = CELossHead(cfg, **kwargs) 
+            self._total_loss.update({"al": 0.})
     
     def copy_state_dict(self, state_dict): 
         pass
 
     def infer(self, x1, x2, x3, *args, **kwargs):
+        loss_va = loss_lv = loss_al = 0.
         if x1 is not None and x2 is not None and self.loss_head_va is not None:
-            self.loss_head_va.infer(x1, x2, *args, **kwargs)
+            loss_va = self.loss_head_va.infer(x1, x2, *args, **kwargs)
         if x1 is not None and x3 is not None and self.loss_head_lv is not None:
-            self.loss_head_lv.infer(x1, x3, *args, **kwargs)
+            loss_lv = self.loss_head_lv.infer(x1, x3, *args, **kwargs)
         if x2 is not None and x3 is not None and self.loss_head_al is not None:
-            self.loss_head_al.infer(x2, x3, *args, **kwargs)
-        return None  
+            loss_al = self.loss_head_al.infer(x2, x3, *args, **kwargs)
+        loss_va = loss_va or 0.
+        loss_lv = loss_lv or 0.
+        loss_al = loss_al or 0.
+        return loss_va + loss_lv + loss_al
+
+    def stats(self, nstep=1, **kwargs):
+        msg = " ".join([
+            f"{k} {v / nstep:.3f}" for k, v in self._total_loss.items()
+        ])
+        return msg
 
     def report(self, gold_file=None):
         report_list = list()
@@ -416,10 +432,13 @@ class VALCELossHead(LossHead):
         loss_va = loss_lv = loss_al = 0.
         if x1 is not None and x2 is not None and self.loss_head_va is not None:
             loss_va = self.loss_head_va(x1, x2, *args, **kwargs)
+            self._total_loss["va"] += loss_va.detach()
         if x1 is not None and x3 is not None and self.loss_head_lv is not None:
             loss_lv = self.loss_head_lv(x1, x3, *args, **kwargs)
+            self._total_loss["lv"] += loss_lv.detach()
         if x2 is not None and x3 is not None and self.loss_head_al is not None:
             loss_al = self.loss_head_al(x2, x3, *args, **kwargs)
+            self._total_loss["al"] += loss_al.detach()
 
         loss = loss_va + loss_lv + loss_al
         return loss

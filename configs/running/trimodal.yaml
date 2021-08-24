@@ -1,0 +1,32 @@
+clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
+clip_model_name: "ViT-B32"
+data_root: "/home/yanpengz/data/audioset" 
+prompt: "the sound of"
+label_map: "ontology,eval_segments" 
+data_name: 'npz_train_toy' #'src_train_toy' #
+eval_name: 'npz_eval_toy' #'src_eval_toy' #
+test_name: 'npz_eval_toy' #'src_eval_toy' #
+eval_samples: 250 
+test_samples: 5000
+peep_rate: 1 
+save_rate: 3 
+batch_size: 64 
+epochs: 1000 
+save_epoch: False
+clf: False
+np_rnd: False
+imagine: True 
+mixup_rate: 0.0
+weighted_sampling: False
+# vision backbone
+resolution: ${model.image.resolution}
+# audio backbone
+max_audio_len: ${running.audio.max_len}
+num_mel_bins: ${running.audio.num_mel_bins} 
+#off # on: true interpreted by YAML, so on/off cannot be used as the keys 
+#share, or not share; the image head as the reference
+siamese: 
+    alive: False 
+    keep_hp: True # keep run-time hyperparameters 
+    amodules: [] #, "pre_encoder", "post_encoder", "misc"]
+    lmodules: [] #"encoder"]

@@ -140,7 +140,7 @@ class ASTClassifier(nn.Module):
             with_meme, meme_image_head_sd = load_meme() 
 
             self.image_head = build_image_head(self.cfg.model.image)
-            if not from_scratch and not self.cfg.model.image.from_scratch:
+            if not from_scratch and not self.cfg.model.image.from_scratch and image_head_sd is not None:
                 self.image_head.copy_state_dict(image_head_sd)
                 self.echo("Initialize image encoder from `image_head`.")
             if not self.cfg.running.imagine:
@@ -151,6 +151,8 @@ class ASTClassifier(nn.Module):
             self.audio_head = build_audio_head(self.cfg.model.audio)
             if not self.cfg.model.audio.from_scratch:
                 if local_cfg is not None:
+                    self.audio_head.load_state_dict(audio_head_sd)
+                    """
                     if (list(audio_head_sd.keys())[0]).startswith("encoder."):
                         audio_head_sd_new = OrderedDict()
                         for k, v in audio_head_sd.items():
@@ -158,6 +160,7 @@ class ASTClassifier(nn.Module):
                             audio_head_sd_new[k] = v
                         audio_head_sd = audio_head_sd_new
                     self.audio_head.copy_state_dict(audio_head_sd)
+                    """
                     self.echo("Initialize audio encoder from `audio_head`.")
                 elif not from_scratch:
                     if with_meme: # higher priority

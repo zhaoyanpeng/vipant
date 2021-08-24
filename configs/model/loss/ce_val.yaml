@@ -1,4 +1,6 @@
 name: 'VALCELossHead'
+layers: []
+scaling: True
 va: True
 lv: False
 al: True 
