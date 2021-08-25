@@ -3,6 +3,7 @@ from typing import Tuple, Union
 from fvcore.common.registry import Registry
 from sklearn import metrics
 
+import csv
 import math
 import copy
 import json
@@ -14,7 +15,8 @@ import torch.distributed as dist
 from torch import nn
 
 from collections import defaultdict
-from clip import LayerNorm, Transformer, ModifiedResNet, VisualTransformer  
+from clip import _tokenizer, LayerNorm, Transformer, ModifiedResNet, VisualTransformer
+from coco_caption.eval_metrics import evaluate_metrics as ac_metric # audio-captioning metric
 
 from .loss_head import build_loss_head, LossHead
 
@@ -279,4 +281,91 @@ class ImagineAndClassifyLossHead(LossHead):
             self._total_loss["bce"] += loss_bce.detach()
 
         loss = self.lambd_ce * loss_ce + loss_bce
+        return loss
+
+class LMLossHead(LossHead):
+    def __init__(self, cfg, **kwargs):
+        super().__init__()
+        self.logit_scale = (
+            nn.Parameter(torch.ones([]) * np.log(1 / 0.07)) if cfg.scaling else
+            torch.ones([], requires_grad=False) * np.log(1 / 1)
+        )
+        self.loss_fn = nn.CrossEntropyLoss(ignore_index=0)
+        self.max_len_dec = cfg.max_len_dec
+        self.sot_token = "<|startoftext|>"
+        self.eot_token = "<|endoftext|>"
+        self.reduce = False
+
+    def copy_state_dict(self, state_dict):
+        key = "logit_scale"
+        new_dict = self.state_dict()
+        new_dict.update({key: state_dict[key]})
+        self.load_state_dict(new_dict)
+
+    def infer(self, x1, x2, x3, *args, **kwargs):
+        if not hasattr(self, "x1s") or not hasattr(self, "x2s") or not hasattr(self, "ids"):
+            self.x1s, self.x2s, self.ids = [], [], []
+        names = kwargs.get("names", None)
+        if names is not None:
+            self.ids.extend(names)
+        predictions = x3.cpu().tolist()
+        for isample, x in enumerate(predictions):
+            x = _tokenizer.decode(x)
+            x = x.replace(self.sot_token, "")
+            eot_pos = x.find(self.eot_token)
+            if eot_pos > 0:
+                x = x[:eot_pos]
+            x = x.strip().split()[:self.max_len_dec]
+            x = " ".join(x)
+            self.x1s.append({
+                "file_name": names[isample],
+                "caption_predicted": x,
+            })
+        return 0.
+
+    def report(self, gold_file=None):
+        assert gold_file is not None, f"please provide the right gold file: `{gold_file}`."
+        references = list()
+        nsample = len(self.x1s)
+        with open(gold_file, "r") as fr:
+            fr = csv.DictReader(fr)
+            for iline, line in enumerate(fr):
+                references.append(line)
+                if iline + 1 >= nsample:
+                    break
+
+        key = "file_name"
+        ref_keys = [r[key] for r in references]
+        ret_keys = [r[key] for r in self.x1s]
+        f_t = set(ref_keys) - set(ret_keys)
+        t_f = set(ret_keys) - set(ref_keys)
+        #print(f"{f_t}\n{t_f}")
+
+        try:
+            msg = []
+            results = ac_metric(self.x1s, references)
+            for k, v in results.items():
+                msg.append(f"{k}: {v['score']:.3f}")
+            msg = " ".join(msg)
+        except Exception as e:
+            msg = f"failed to evaluate the model: {e}"
+
+        del self.x1s, self.x2s, self.ids
+        report = f"{msg}"
+        return report
+
+    def forward(self, x1, x2, x3, *args, **kwargs):
+        # x1: logits; x2: word seqs; predictions
+        if not self.training:
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                return self.infer(x1, x2, x3, *args, **kwargs)
+            return None
+        # cosine similarity as logits
+        x1 = x1.reshape(-1, x1.shape[-1])
+        logit_scale = self.logit_scale.exp()
+        logits_per_x1 = logit_scale * x1
+        # cross entropy loss
+        labels = x2.reshape(-1)
+        loss_mean_x1 = self.loss_fn(logits_per_x1, labels)
+        loss = loss_mean_x1
         return loss

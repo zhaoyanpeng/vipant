@@ -48,6 +48,7 @@ class AudioHead(nn.Module):
                 width=cfg.width,
                 heads=heads,
             )
+        self.time_first = cfg.time_first
 
     def copy_state_dict(self, state_dict): 
         excluded = ["conv1.weight", "positional_embedding", "attnpool.positional_embedding"]
@@ -323,3 +324,29 @@ class CLIPVisionEncoderAsAudioHead(nn.Module):
             z = z / z.norm(dim=-1, keepdim=True)
             #print(f"{threading.current_thread().ident} audio --{kwargs.get('normalized', False)}")
         return z
+
+@AUDIO_HEADS_REGISTRY.register()
+class DeiTAudioEncoderHead(DeiTAudioHead):
+    def __init__(self, cfg, **kwargs):
+        super().__init__(cfg, **kwargs)
+
+    def forward(self, audios, *args, **kwargs):
+        pass
+
+@AUDIO_HEADS_REGISTRY.register()
+class CLIPAudioEncoderHead(CLIPVisionEncoderAsAudioHead):
+    def __init__(self, cfg, **kwargs):
+        super().__init__(cfg, **kwargs)
+
+    def forward(self, audios, *args, **kwargs):
+        z, features = self.encoder(audios, require_feature=True)
+        nrow, ncol = self.encoder.position_resolution
+        N, _, D = features.shape
+        if self.time_first:
+            features = features.view(N, nrow, ncol, D)
+        else:
+            features = features.view(N, ncol, nrow, D)
+        if kwargs.get("normalized", False):
+            z = z / z.norm(dim=-1, keepdim=True)
+            #print(f"{threading.current_thread().ident} audio --{kwargs.get('normalized', False)}")
+        return z, features

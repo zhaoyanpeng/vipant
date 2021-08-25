@@ -42,3 +42,19 @@ def numel(model: torch.nn.Module, trainable: bool = False):
         parameters = [p for p in parameters if p.requires_grad]
     unique = {p.data_ptr(): p for p in parameters}.values()
     return sum(p.numel() for p in unique) 
+
+class AverageMeter(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.sum = self.count = 0
+
+    def __call__(self, val, n=1):
+        self.count += n
+        self.sum += val * n
+
+    @property
+    def average(self):
+        return self.sum / self.count
+

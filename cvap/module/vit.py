@@ -48,7 +48,7 @@ class VisualTransformer(nn.Module):
     def dtype(self):
         return self.conv1.weight.dtype
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, require_feature: bool=False):
         x = x.type(self.dtype)
         x = self.conv1(x)  # shape = [*, width, grid, grid]
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
@@ -61,10 +61,13 @@ class VisualTransformer(nn.Module):
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
 
-        x = self.ln_post(x[:, 0, :])
+        x = x_feature = self.ln_post(x)
 
         if self.proj is not None:
-            x = x @ self.proj
+            x = x[:, 0, :] @ self.proj
+
+        if require_feature:
+            return x, x_feature[:, 1:]
 
         return x
 

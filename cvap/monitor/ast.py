@@ -12,26 +12,11 @@ import torch.nn.functional as F
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
-from ..util import numel
+from ..util import numel, AverageMeter
 from ..model import ASTClassifier as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_ast_dataloader as build_dataloader
 from ..dataset import build_audioset_label_map as build_label_map
-
-class AverageMeter(object):
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.sum = self.count = 0
-
-    def __call__(self, val, n=1):
-        self.count += n
-        self.sum += val * n
-
-    @property
-    def average(self):
-        return self.sum / self.count
 
 class Monitor(object):
     def __init__(self, cfg, echo, device):
@@ -295,7 +280,7 @@ class Monitor(object):
                 param_groups, self.cfg.optimizer.lr, weight_decay=5e-7, betas=(0.95, 0.999)
             )
             steps = list(self.cfg.optimizer.steps)
-            steps = [self.cfg.opeimizer.epochs] if len(steps) == 0 else steps
+            steps = [self.cfg.optimizer.epochs] if len(steps) == 0 else steps
             self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
                 self.optimizer, steps, gamma=0.5
             )

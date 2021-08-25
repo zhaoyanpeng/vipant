@@ -11,6 +11,9 @@ save_rate: 32
 batch_size: 50 
 epochs: 32
 save_epoch: False
+np_rnd: False
+imagine: False
+mixup_rate: 0.0
 # vision backbone
 resolution: ${model.image.resolution}
 # audio backbone

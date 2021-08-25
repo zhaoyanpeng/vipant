@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
+from ..util import numel, AverageMeter
 from ..model import CLAPDP as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_audio_text_dataloader as build_dataloader 
@@ -23,6 +24,9 @@ class Monitor(object):
         self.echo = echo
         self.device = device
         self.build_data()
+        if self.cfg.running.audio.eval_norms:
+            self.eval_norms()
+            return # mean & std of the data
         model = Model(cfg, echo)
         tunable_params = model.build()
         self.model = DistributedDataParallel(
@@ -30,6 +34,29 @@ class Monitor(object):
         ) if torch.distributed.is_initialized() else model 
         self.model.train(not cfg.eval)
         self.build_optimizer(tunable_params)
+
+    def eval_norms(self):
+        self.echo("Evaluate mean and std...")
+        cnt = 0.
+        som = torch.tensor(0., device=self.device)
+        sos = torch.tensor(0., device=self.device)
+        som_list, sos_list = list(), list()
+        for step, batch in enumerate(self.dataloader):
+            audios, _, _ = self.make_batch(batch)
+            bsz = audios.shape[0]
+            new_cnt = cnt + bsz
+            mean = audios.mean(axis=[2, 3])
+            mean_sq = (audios ** 2).mean(axis=[2, 3])
+            """ incremental update might be numerically unstable
+            som = (som * cnt + mean.sum()) / new_cnt
+            sos = (sos * cnt + mean_sq.sum()) / new_cnt
+            """
+            som_list.append(mean)
+            sos_list.append(mean_sq)
+        som = torch.cat(som_list, 0).mean(axis=[0])
+        sos = torch.cat(sos_list, 0).mean(axis=[0])
+        std = (sos - som ** 2).sqrt()
+        self.echo(f"MEAN: {som.cpu().tolist()} STD: {std.cpu().tolist()}")
 
     def build_data(self):
         rcfg = self.cfg.running
@@ -50,6 +77,8 @@ class Monitor(object):
             self.gold_file = f"{rcfg.data_root}/{eval_name}.csv"
 
     def learn(self):
+        if self.cfg.running.audio.eval_norms:
+            return # `eval_norms` is the only task
         if not self.model.training:
             self.echo("Evaluating started...")
             with torch.no_grad():
@@ -57,6 +86,7 @@ class Monitor(object):
                 self.echo(f"{report}")
                 return None 
         self.echo("Training started...")
+        self.ast_loss = AverageMeter()
         self.last_time = 0.
         self.total_loss = 0
         self.total_step = 0
@@ -104,14 +134,18 @@ class Monitor(object):
         self.timeit(all_time)        
         device_ids = [i for i in range(self.cfg.num_gpus)]
         nchunk = dist.get_world_size() if torch.distributed.is_initialized() else 1  
+        warmup_step_rate = self.cfg.optimizer.warmup_steps // 20
         for step, batch in enumerate(self.dataloader, start=iepoch * len(self.dataloader)):
             audios, text, _ = self.make_batch(batch)
             self.timeit(all_time, key="data")
 
-            #print(audios.size(), text.size())
-            #import sys; sys.exit(0) 
-
-            adjust_learning_rate(self.cfg.optimizer, self.optimizer, self.dataloader, step)
+            if self.cfg.optimizer.use_lars:
+                adjust_learning_rate(self.cfg.optimizer, self.optimizer, self.dataloader, step)
+            if self.cfg.optimizer.warmup and self.total_step <= self.cfg.optimizer.warmup_steps and self.total_step % warmup_step_rate == 0:
+                lr = ((self.total_step + 0) / self.cfg.optimizer.warmup_steps) * self.cfg.optimizer.lr
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = lr
+                self.echo(f"warmup lr: {lr:.2e}")
 
             self.optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast():
@@ -131,6 +165,7 @@ class Monitor(object):
             self.total_step += 1
             self.total_loss += loss.detach()
             self.total_inst += audios.shape[0] * nchunk
+            self.ast_loss(loss.detach(), audios.shape[0])
             if self.cfg.rank == 0 and self.total_step % self.cfg.running.peep_rate == 0:
                 def grad_norm():
                     return sum(
@@ -141,13 +176,13 @@ class Monitor(object):
                 self.echo(
                     f"epoch {iepoch:>4} step {self.total_step}\t" + #gnorm {grad_norm():.2f} " +
                     f"lr_w {lr_w:.2e} lr_b {lr_b:.2e} loss {self.total_loss / self.total_step:.3f} " + 
-                    f"{self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
+                    f"epoch loss {self.ast_loss.average:.4f} {self.total_inst / (time.time() - self.start_time):.2f} samples/s"
                 )
             if self.total_step % self.cfg.running.save_rate == 0 or (
                     self.cfg.running.save_epoch and self.total_step % len(self.dataloader) == 0
                 ): # distributed eval
                 report = ""
-                if self.evalloader is not None:
+                if self.evalloader is not None and loss.detach() < 5.: # no need to eval if CE is too large
                     self.model.train(False)
                     with torch.no_grad():
                         report = self.infer(
@@ -159,36 +194,42 @@ class Monitor(object):
                 if self.cfg.rank == 0:
                     self.save()
             self.timeit(all_time, key="report")
+
+        if not self.cfg.optimizer.use_lars:
+            self.scheduler.step()
+        self.ast_loss.reset()
         self.timeit(all_time, show=True)
         
     def infer(self, dataloader, samples=float("inf"), iepoch=0):
-        nsample, nchunk, nbatch = 0, 1, len(dataloader) 
+        losses, nsample, nchunk, nbatch = 0, 0, 1, len(dataloader)
         device_ids = [i for i in range(self.cfg.num_gpus)]
         if isinstance(self.model, DistributedDataParallel):
             dataloader.sampler.set_epoch(iepoch)
             nchunk = self.cfg.num_gpus
+        peep_rate = max(10, (len(dataloader) // 10))
         start_time = time.time()
         for ibatch, batch in enumerate(dataloader):
             if nsample >= samples:
                 #print(f"{nsample}\t{ibatch}/{nbatch} continue")
-                break #continue # iterate through every batch 
+                break #continue # iterate through every batch
             audios, text, names = self.make_batch(batch)
             #msg = f"{audios[0, 0, 50, 50:55]} {text[0, 50, 50:55]}" # if ibatch == 0 else ""
             #print(f"{nsample}\t{ibatch}/{nbatch} done {msg}")
             loss = self.model(audios, text, device_ids=device_ids, names=names)
             nsample += audios.shape[0] * nchunk
+            losses += loss
+            if self.cfg.rank == 0 and (ibatch + 1) % peep_rate == 0:
+                self.echo(
+                    f"step {ibatch}\t" + #gnorm {grad_norm():.2f} " +
+                    f"loss {losses / (ibatch + 1):.8f} " +
+                    f"{nsample / (time.time() - start_time):.2f} samples/s"
+                )
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
         self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
-        #audio_npy_file = f"{self.cfg.model_root}/{self.cfg.model_name}/clotho.audios.val.vitb16"
-        #audio_npy_file = f"{self.cfg.model_root}/{self.cfg.model_name}/clotho.text.val.vitb16"
-        #audios = torch.cat(model.loss_head.x1s)
-        #audios = torch.cat(model.loss_head.x2s)
-        #np.save(audio_npy_file, audios.cpu().numpy())
-        #print(audios.shape)
-        return model.report(gold_file=None)
+        return model.report(gold_file=self.gold_file)
 
     def save(self):
-        fsave = f"{self.cfg.model_root}/{self.cfg.model_name}/{self.total_step:08d}.pth"
+        fsave = f"{self.cfg.alias_root}/{self.cfg.model_name}/{self.total_step:08d}.pth"
         self.echo(f"Saving the checkpoint to {fsave}")
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
         checkpoint = {
@@ -210,19 +251,29 @@ class Monitor(object):
             k = re.sub("^module\.", "", k) if ddp else k
             if f"{k}" not in tunable_params:
                 v.requires_grad = False
+        self.echo(f"# param {numel(self.model) / 1e6:.2f}M # tunable {numel(self.model, True) / 1e6:.2f}M.")
         param_groups = [
             {"params": [p for p in self.params if p.ndim > 1]},
             {"params": [p for p in self.params if p.ndim < 2]},
         ]
-        self.optimizer = LARS(
-            param_groups, 
-            lr=0., 
-            weight_decay=self.cfg.optimizer.weight_decay,
-            weight_decay_filter=exclude_bias_or_norm,
-            lars_adaptation_filter=exclude_bias_or_norm,
-        )
-        debug = False 
-        if not debug:
+        if self.cfg.optimizer.use_lars:
+            self.optimizer = LARS(
+                param_groups,
+                lr=0.,
+                weight_decay=self.cfg.optimizer.weight_decay,
+                weight_decay_filter=exclude_bias_or_norm,
+                lars_adaptation_filter=exclude_bias_or_norm,
+            )
+        else:
+            self.optimizer = torch.optim.Adam(
+                param_groups, self.cfg.optimizer.lr, weight_decay=5e-7, betas=(0.95, 0.999)
+            )
+            steps = list(self.cfg.optimizer.steps)
+            steps = [self.cfg.optimizer.epochs] if len(steps) == 0 else steps
+            self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
+                self.optimizer, steps, gamma=0.5
+            )
+        if not self.cfg.verbose:
             return
         self.echo(f"Gradienting The Following Parameters:")
         for k, v in self.model.named_parameters():

@@ -12,7 +12,7 @@ from tqdm import tqdm
 from .model import build_model
 from .simple_tokenizer import SimpleTokenizer as _Tokenizer
 
-__all__ = ["available_models", "load", "tokenize"]
+__all__ = ["available_models", "load", "tokenize", "_tokenizer"]
 _tokenizer = _Tokenizer()
 
 _MODELS = {

@@ -22,14 +22,15 @@ class CLAPDP(nn.Module):
     def forward(self, audios, text, *args, **kwargs):
         device_ids = kwargs.get("device_ids", [0])
         # how to asynchronize the two `data_parallel` 
-        kwargs = {"normalized": True, "names": kwargs.get("names", None)}
-        audio_features = data_parallel(
+        kwargs = {"normalized": False, "names": kwargs.get("names", None)}
+        _, audio_features = data_parallel(
             self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
         )
-        text_features = data_parallel(
-            self.text_head, text, device_ids=device_ids, module_kwargs=kwargs
+        text_input = (text, audio_features, self.audio_head.time_first)
+        _, logits, predictions = data_parallel(
+            self.text_head, text_input, device_ids=device_ids, module_kwargs=kwargs
         )
-        loss = self.loss_head(audio_features, text_features, **kwargs)
+        loss = self.loss_head(logits, text[:, 1:], predictions, **kwargs)
         return loss     
 
     def collect_audio_state_dict(self):
@@ -103,7 +104,7 @@ class CLAPDP(nn.Module):
             self.text_head = build_text_head(self.cfg.model.text) #
             self.text_head.copy_state_dict(text_head_sd)
 
-            self.loss_head = build_loss_head(local_cfg.model.loss)
+            self.loss_head = build_loss_head(self.cfg.model.loss)
             self.loss_head.load_state_dict(loss_head_sd)
             self.cuda(self.cfg.rank) 
         else:
@@ -148,6 +149,12 @@ class CLAPDP(nn.Module):
                 })
             else:
                 self.echo("Freeze audio encoder.")
+            if not self.cfg.model.text.freeze:
+                tunable_params.update({
+                    f"text_head.{k}": v for k, v in self.text_head.named_parameters()
+                })
+            else:
+                self.echo("Freeze text encoder.")
             self.cuda(self.cfg.rank)
         return tunable_params
 

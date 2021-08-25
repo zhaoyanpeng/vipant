@@ -20,6 +20,7 @@ class TextualTransformer(nn.Module):
             ctx_len: int,
             vocab_size: int,
             output_dim: int, 
+            require_inter_attn: bool = False,
         ):
         super().__init__()
         self.ctx_len = ctx_len
@@ -27,7 +28,8 @@ class TextualTransformer(nn.Module):
             width=width,
             layers=layers,
             heads=heads,
-            attn_mask=self.build_attention_mask()
+            attn_mask=self.build_attention_mask(),
+            require_inter_attn=require_inter_attn,
         )
 
         self.vocab_size = vocab_size
@@ -67,19 +69,23 @@ class TextualTransformer(nn.Module):
     def dtype(self):
         return self.token_embedding.weight.dtype
 
-    def forward(self, text, positional_embedding=None):
+    def forward(self, text, positional_embedding=None, memory=None, require_feature=False):
         x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
         
         positional_embedding = positional_embedding or self.positional_embedding
         positional_embedding = positional_embedding[:x.shape[1]]
         x = x + positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
-        x = self.transformer(x)
+        x = self.transformer(x, memory)
         x = x.permute(1, 0, 2)  # LND -> NLD
-        x = self.ln_final(x).type(self.dtype)
+        x = x_feature = self.ln_final(x).type(self.dtype)
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
         x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection
+
+        if require_feature:
+            return x, x_feature
+
         return x
 

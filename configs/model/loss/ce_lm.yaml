@@ -1,0 +1,4 @@
+name: 'LMLossHead'
+layers: []
+scaling: True
+max_len_dec: 20

@@ -1,3 +1,4 @@
 name: 'ClassificationHead'
 embed_dim: ${model.image.embed_dim} 
 layers: []
+scaling: True

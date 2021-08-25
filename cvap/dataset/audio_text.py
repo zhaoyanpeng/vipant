@@ -30,6 +30,7 @@ class AudioTextDatasetSrc(data.Dataset):
             self.dataset.append(record) 
             if not train and iline + 1 == cfg.eval_samples:
                 break
+        self.audio_norms = cfg.audio.norms
         self.length = len(self.dataset)
         self.train = train
         self.cfg = cfg
@@ -37,19 +38,19 @@ class AudioTextDatasetSrc(data.Dataset):
         acfg = cfg.audio
         self.transform_audio, self.transform_fbank = make_transform(acfg)        
         self.kaldi_params = {
-            "use_log_fbank": acfg.use_log_fbank,
-            "frame_length": acfg.frame_length,
-            "frame_shift": acfg.frame_shift,
-            "window_type": acfg.window_type,
+            "htk_compat": True,
+            "use_energy": False,
+            "window_type": 'hanning',
             "num_mel_bins": acfg.num_mel_bins,
-            "high_freq": acfg.high_freq,
-            "low_freq": acfg.low_freq,
+            "dither": 0.0,
+            "frame_shift": 10
         }
 
     def _shuffle(self):
         pass
 
     def __getitem__(self, index):
+        name = self.dataset[index]["id"]
         label_str = self.dataset[index]["label_str"] 
         label_int = self.dataset[index]["label_int_bpe"] 
         aclip = self.dataset[index]["aclip"] 
@@ -62,25 +63,32 @@ class AudioTextDatasetSrc(data.Dataset):
             self.kaldi_params, 
             train=self.train, 
             max_audio_len=max_audio_len,
-            transform_audio=(self.transform_audio if self.train else None)
+            transform_audio=(
+                self.transform_audio if self.train and not self.cfg.audio.eval_norms else None
+            )
         ) # (..., time, freq)
         
-        if self.train and self.transform_fbank is not None:
-            audio = self.transform_fbank(audio)
-
-        npad =  self.cfg.max_audio_len - audio.shape[0]
+        npad = max_audio_len - audio.shape[0]
         if npad > 0: # always pad to the right
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
+
+        if not self.cfg.audio.eval_norms and len(self.audio_norms) == 2:
+            mean, std = self.audio_norms
+            audio = (audio - mean) / (std * 2)
+
+        #if self.train and self.transform_fbank is not None:
+        if not self.cfg.audio.eval_norms and self.train and self.transform_fbank is not None:
+            audio = self.transform_fbank(audio)
         
         audio = audio[None]
 
         if self.train:
             idx = np.random.choice(len(label_int), 1)[0]
             text = label_int[idx]
-            name = label_str[idx] 
+            #name = label_str[idx]
         else:
             text = label_int
-            name = label_str
+            #name = label_str
 
         item = {"audio": audio, "text": text, "name": name}
         return item 
@@ -111,7 +119,7 @@ class AudioTextCollator:
             """
         elif isinstance(text_list[0][0], list): # test
             text_list = list(itertools.chain.from_iterable(text_list))
-            name = list(itertools.chain.from_iterable(name))
+            #name = list(itertools.chain.from_iterable(name))
         else:
             raise ValueError(f"unrecognized `{type(text_list[0][0])}`")
         # https://stackoverflow.com/a/38619333
@@ -152,10 +160,9 @@ def build_dataloader(cfg, data_list, dataset_cls, shuffle=True, train=True):
     )
     return sampler, dataloader
 
-def build_dataloader_clotho(cfg, data_name, shuffle=True, train=True):
-    rcfg = cfg.running
+def build_clotho_data_list(cfg, data_name):
     fold = data_name.rsplit("_", 1)[-1] # {development, validation, evaluation} 
-    data_path = f"{rcfg.data_root}/{data_name}.csv"
+    data_path = f"{cfg.data_root}/{data_name}.csv"
     assert os.path.isfile(data_path), f"{data_path} is not a file."
     dataset = list()
     with open(data_path, "r") as fr:
@@ -165,6 +172,7 @@ def build_dataloader_clotho(cfg, data_name, shuffle=True, train=True):
             captions = [row[f"caption_{icap}"] for icap in range(1, 6)]
             label_int_bpe = tokenize(captions, as_list=True)
             item = {
+                "id": filename,
                 "aclip": f"{fold}/{filename}", 
                 "label_int_bpe": label_int_bpe,
                 "label_int_w2v": [], 
@@ -174,6 +182,14 @@ def build_dataloader_clotho(cfg, data_name, shuffle=True, train=True):
             if i > 10:
                 pass #break
         #print(dataset)
+    return dataset
+
+def build_dataloader_clotho(cfg, data_name, shuffle=True, train=True):
+    name_list = data_name.split(",")
+    dataset = list()
+    for name in name_list:
+        subset = build_clotho_data_list(cfg.running, name)
+        dataset.extend(subset)
     return build_dataloader(cfg, dataset, AudioTextDatasetSrc, shuffle=shuffle, train=train)
 
 def build_audio_text_dataloader(cfg, data_name, *args, shuffle=True, train=True, **kwargs):

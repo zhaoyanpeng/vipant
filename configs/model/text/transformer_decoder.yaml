@@ -1,0 +1,12 @@
+name: 'SeqGenerationHead'
+freeze: True 
+from_scratch: False
+embed_dim: ${model.image.embed_dim}
+vocab_size: 49408
+ctx_len: 77
+layers: 12
+width: 512
+heads: 8
+max_len_dec: 32 
+mem_width: ${model.audio.width}
+bias: True
