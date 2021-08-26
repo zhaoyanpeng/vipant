@@ -13,6 +13,7 @@ save_rate: 3
 batch_size: 64 
 epochs: 1000 
 save_epoch: False
+force_npz: False # force to use npz, i.e., precomputed image and audio features
 clf: True
 np_rnd: False
 imagine: False

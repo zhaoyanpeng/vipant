@@ -24,8 +24,10 @@ RUN pip install --no-cache-dir --upgrade setuptools
 RUN pip install --no-cache-dir -r /audio/requirements.txt
 RUN pip install --no-cache-dir --upgrade soundfile 
 RUN pip install --no-cache-dir --upgrade timm
-RUN pip cache purge
+RUN pip install --no-cache-dir --upgrade numpy
+#RUN pip cache purge
 
+COPY coco_caption /audio/coco_caption
 COPY clip /audio/clip
 COPY cvap /audio/cvap
 COPY configs /audio/configs

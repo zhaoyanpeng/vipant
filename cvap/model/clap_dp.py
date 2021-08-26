@@ -122,7 +122,7 @@ class CLAPDP(nn.Module):
                             k = re.sub("^encoder\.", "", k)
                             audio_head_sd_new[k] = v
                         audio_head_sd = audio_head_sd_new
-                    self.audio_head.copy_state_dict(audio_head_sd)
+                    self.audio_head.from_pretrained(audio_head_sd, local_cfg)
                     self.echo("Initialize audio encoder from `audio_head`.")
                 elif not from_scratch:
                     self.audio_head.copy_state_dict(image_head_sd)

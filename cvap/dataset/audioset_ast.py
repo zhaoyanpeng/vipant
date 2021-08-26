@@ -22,7 +22,7 @@ import torch.nn.functional as F
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
 )
-from .ast import print_label_dist, ASTSrc 
+from .ast import print_label_dist, ASTNpz, ASTSrc 
 from clip import tokenize
 
 class AudiosetDatasetNpz(data.Dataset):
@@ -251,7 +251,7 @@ class ImageAudioCollator:
             label = np.array(label)
         elif isinstance(text_list[0][0], list): # test
             text_list = list(itertools.chain.from_iterable(text_list))
-            name = list(itertools.chain.from_iterable(name))
+            #name = list(itertools.chain.from_iterable(name))
             #label = # list of label lists 
         else:
             raise ValueError(f"unrecognized `{type(text_list[0][0])}`")
@@ -268,7 +268,10 @@ def build_ast_dataloader(cfg, data_name, label_map, shuffle=True, train=True):
     rcfg = cfg.running
     weighted = train and rcfg.weighted_sampling
     if data_name.startswith("src"):
-        dataset = AudiosetDatasetSrc(rcfg, data_name, train, label_map, weighted)
+        if not rcfg.force_npz:
+            dataset = ASTSrc(rcfg, data_name, train, label_map, weighted)
+        else:
+            dataset = ASTNpz(rcfg, data_name, train, label_map, weighted)
     elif data_name.startswith("npz"):
         dataset = AudiosetDatasetNpz(rcfg, data_name, train, label_map, weighted)
     else:
