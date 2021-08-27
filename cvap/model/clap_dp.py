@@ -20,8 +20,10 @@ class CLAPDP(nn.Module):
         self.echo = echo
 
     def forward(self, audios, text, *args, **kwargs):
+        if kwargs.get("retrieval", False): # if it is a retrieval task
+            return self.forward_retrieval(audios, text, *args, **kwargs)
         device_ids = kwargs.get("device_ids", [0])
-        # how to asynchronize the two `data_parallel` 
+        # how to asynchronize the two `data_parallel`
         kwargs = {"normalized": False, "names": kwargs.get("names", None)}
         _, audio_features = data_parallel(
             self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
@@ -31,7 +33,20 @@ class CLAPDP(nn.Module):
             self.text_head, text_input, device_ids=device_ids, module_kwargs=kwargs
         )
         loss = self.loss_head(logits, text[:, 1:], predictions, **kwargs)
-        return loss     
+        return loss  
+
+    def forward_retrieval(self, audios, text, *args, **kwargs):
+        device_ids = kwargs.get("device_ids", [0])
+        # how to asynchronize the two `data_parallel`
+        kwargs = {"normalized": True, "names": kwargs.get("names", None)}
+        audio_features = data_parallel(
+            self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
+        )
+        text_features = data_parallel(
+            self.text_head, text, device_ids=device_ids, module_kwargs=kwargs
+        )
+        loss = self.loss_head(audio_features, text_features, **kwargs)
+        return loss
 
     def collect_audio_state_dict(self):
         return (
@@ -90,16 +105,6 @@ class CLAPDP(nn.Module):
 
             self.audio_head = build_audio_head(local_cfg.model.audio)
             self.audio_head.load_state_dict(audio_head_sd)
-            """
-            if (list(audio_head_sd.keys())[0]).startswith("encoder."):
-                audio_head_sd_new = OrderedDict()
-                for k, v in audio_head_sd.items():
-                    k = re.sub("^encoder\.", "", k)
-                    audio_head_sd_new[k] = v
-                audio_head_sd = audio_head_sd_new
-            self.audio_head = build_audio_head(self.cfg.model.audio)
-            self.audio_head.copy_state_dict(audio_head_sd)
-            """
 
             self.text_head = build_text_head(self.cfg.model.text) #
             self.text_head.copy_state_dict(text_head_sd)

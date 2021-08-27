@@ -27,6 +27,9 @@ RUN pip install --no-cache-dir --upgrade timm
 RUN pip install --no-cache-dir --upgrade numpy
 #RUN pip cache purge
 
+# java
+RUN conda install -c conda-forge openjdk 
+
 COPY coco_caption /audio/coco_caption
 COPY clip /audio/clip
 COPY cvap /audio/cvap

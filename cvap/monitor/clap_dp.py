@@ -149,7 +149,7 @@ class Monitor(object):
 
             self.optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast():
-                loss = self.model(audios, text, device_ids=device_ids)
+                loss = self.model(audios, text, device_ids=device_ids, retrieval=self.cfg.running.retrieval)
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
@@ -215,9 +215,9 @@ class Monitor(object):
             audios, text, names = self.make_batch(batch)
             #msg = f"{audios[0, 0, 50, 50:55]} {text[0, 50, 50:55]}" # if ibatch == 0 else ""
             #print(f"{nsample}\t{ibatch}/{nbatch} done {msg}")
-            loss = self.model(audios, text, device_ids=device_ids, names=names)
+            loss = self.model(audios, text, device_ids=device_ids, names=names, retrieval=self.cfg.running.retrieval)
             nsample += audios.shape[0] * nchunk
-            losses += loss
+            losses += loss or 0.
             if self.cfg.rank == 0 and (ibatch + 1) % peep_rate == 0:
                 self.echo(
                     f"step {ibatch}\t" + #gnorm {grad_norm():.2f} " +

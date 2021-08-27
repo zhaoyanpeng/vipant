@@ -210,6 +210,7 @@ class ImaginedCLFLossHead(LossHead):
 
 class ImagineAndClassifyLossHead(LossHead):
     # audio-vision contrastive learning task (maybe w/ supervised classification)
+    # this is more flexible than `ImaginedCLFLossHead`
     def __init__(self, cfg, **kwargs):
         super().__init__()
         self.loss_ce = self.loss_bce = None
@@ -321,18 +322,43 @@ class LMLossHead(LossHead):
                 "file_name": names[isample],
                 "caption_predicted": x,
             })
-        return 0.
+        return None
+
+    @staticmethod
+    def is_json(gold_file):
+        with open(gold_file, "r") as fr:
+            line = next(fr)
+            try:
+                line = json.loads(line)
+                is_json = isinstance(line, dict)
+            except Exception as e:
+                is_json = False
+        return is_json
 
     def report(self, gold_file=None):
         assert gold_file is not None, f"please provide the right gold file: `{gold_file}`."
         references = list()
         nsample = len(self.x1s)
-        with open(gold_file, "r") as fr:
-            fr = csv.DictReader(fr)
-            for iline, line in enumerate(fr):
-                references.append(line)
-                if iline + 1 >= nsample:
-                    break
+
+        # csv (Clotho) or json (AudioCaps)
+        if not self.is_json(gold_file):
+            with open(gold_file, "r") as fr:
+                fr = csv.DictReader(fr)
+                for iline, line in enumerate(fr):
+                    references.append(line)
+                    if iline + 1 >= nsample:
+                        break
+        else:
+            with open(gold_file, "r") as fr:
+                for iline, line in enumerate(fr):
+                    record = json.loads(line)
+                    item = {
+                        f"caption_{i + 1}": caption for i, caption in enumerate(record["captions"])
+                    }
+                    item["file_name"] = record["id"]
+                    references.append(item)
+                    if iline + 1 >= nsample:
+                        break
 
         key = "file_name"
         ref_keys = [r[key] for r in references]

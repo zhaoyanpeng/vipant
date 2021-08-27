@@ -64,7 +64,7 @@ class AudioHead(nn.Module):
                 width=cfg.width,
                 heads=heads,
             )
-        self.time_first = cfg.time_first
+        self.time_first = getattr(cfg, "time_first", False)
 
     def copy_state_dict(self, state_dict): 
         excluded = ["conv1.weight", "positional_embedding", "attnpool.positional_embedding"]
@@ -298,7 +298,7 @@ class CLIPVisionEncoderAsAudioHead(nn.Module):
                 "time-first convolution kernel when loading from a pretrained model.", stacklevel=2
             )
 
-        assert self.time_first, f"`self.time_first` musth be True."
+        assert self.time_first, f"`self.time_first` must be True."
 
         time_first = self.time_first
         if nrow <= old_nrow: # time

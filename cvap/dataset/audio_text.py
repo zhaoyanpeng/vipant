@@ -50,18 +50,22 @@ class AudioTextDatasetSrc(data.Dataset):
         pass
 
     def __getitem__(self, index):
+        akey = "aclip"
         name = self.dataset[index]["id"]
+        sub_dir = self.dataset[index]["dir"]
         label_str = self.dataset[index]["label_str"] 
         label_int = self.dataset[index]["label_int_bpe"] 
-        aclip = self.dataset[index]["aclip"] 
+        aclip = self.dataset[index][akey][0]
 
-        aclip_file = f"{self.cfg.data_root}/{aclip}"
+        sub_dir = "" if len(sub_dir) == 0 else f"{sub_dir}/"
+        aclip = aclip if aclip == name else f"{akey}/{name}.{aclip}"
+        aclip_file = f"{self.cfg.data_root}/{sub_dir}{aclip}"
 
         max_audio_len = self.cfg.max_audio_len
         audio = _extract_kaldi_spectrogram(
-            aclip_file, 
-            self.kaldi_params, 
-            train=self.train, 
+            aclip_file,
+            self.kaldi_params,
+            train=self.train,
             max_audio_len=max_audio_len,
             transform_audio=(
                 self.transform_audio if self.train and not self.cfg.audio.eval_norms else None
@@ -173,13 +177,32 @@ def build_clotho_data_list(cfg, data_name):
             label_int_bpe = tokenize(captions, as_list=True)
             item = {
                 "id": filename,
-                "aclip": f"{fold}/{filename}", 
+                "dir": fold,
+                "aclip": [filename],
                 "label_int_bpe": label_int_bpe,
                 "label_int_w2v": [], 
                 "label_str": captions 
             } 
             dataset.append(item)
             if i > 10:
+                pass #break
+        #print(dataset)
+    return dataset
+
+def build_audiocaps_data_list(cfg, data_name):
+    data_path = f"{cfg.data_root}/{data_name}.csv"
+    assert os.path.isfile(data_path), f"{data_path} is not a file."
+    dataset = list()
+    with open(data_path, "r") as fr:
+        for iline, line in enumerate(fr):
+            record = json.loads(line)
+            record["label_int_w2v"] = []
+            record["label_int_bpe"] = tokenize(
+                record["captions"], as_list=True
+            ) # add bpe captions
+            record["label_str"] = record.pop("captions")
+            dataset.append(record)
+            if iline > 10:
                 pass #break
         #print(dataset)
     return dataset
@@ -192,9 +215,21 @@ def build_dataloader_clotho(cfg, data_name, shuffle=True, train=True):
         dataset.extend(subset)
     return build_dataloader(cfg, dataset, AudioTextDatasetSrc, shuffle=shuffle, train=train)
 
+def build_dataloader_audiocaps(cfg, data_name, shuffle=True, train=True):
+    name_list = data_name.split(",")
+    dataset = list()
+    for name in name_list:
+        subset = build_audiocaps_data_list(cfg.running, name)
+        dataset.extend(subset)
+    return build_dataloader(cfg, dataset, AudioTextDatasetSrc, shuffle=shuffle, train=train)
+
 def build_audio_text_dataloader(cfg, data_name, *args, shuffle=True, train=True, **kwargs):
     if data_name.startswith("clotho"):
         return build_dataloader_clotho(
+            cfg, data_name, shuffle=shuffle, train=train
+        )
+    elif data_name.startswith("audiocaps"):
+        return build_dataloader_audiocaps(
             cfg, data_name, shuffle=shuffle, train=train
         )
     else:

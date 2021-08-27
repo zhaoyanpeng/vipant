@@ -63,6 +63,48 @@ class LossHead(nn.Module):
                 print(k, len(v))
             print(f"total {len(sample_by_classname)} groups")
         return sample_by_classname, classname_by_sample
+
+    @staticmethod
+    def retrieval_metrics(ranks, nsample=None, msg=""):
+        nsample = nsample or ranks.shape[0]
+        R1 = torch.where(ranks < 1)[0].shape[0] / nsample * 100.
+        R5 = torch.where(ranks < 5)[0].shape[0] / nsample * 100.
+        R10 = torch.where(ranks < 10)[0].shape[0] / nsample * 100.
+        R50 = torch.where(ranks < 50)[0].shape[0] / nsample * 100.
+        MED = ranks.median() + 1
+        AVG = ranks.mean() + 1
+        msg = f"{msg}: R@1 {R1:2.2f} R5 {R5:2.2f} R10 {R10:2.2f} R50 {R50:2.2f} MED {MED:2.2f} AVG {AVG:2.2f}"
+        return msg
+
+    @staticmethod
+    def retrieval_eval(x1s, x2s, k=5):
+        # assume x1s.shape[0] * k == x2s.shape[0]
+        # x1 -> x2
+        x12 = x1s @ x2s.t()
+        nsample = x1s.shape[0]
+        ind_12 = x12.argsort(descending=True)
+        ranks = torch.zeros(nsample, device=x1s.device)
+        for i in range(nsample):
+            rank = 1e9
+            inds = ind_12[i : i + 1]
+            for j in range(i * k, i * k + k):
+                rank_j = torch.where(inds == j)[1][0]
+                if rank_j < rank:
+                    rank = rank_j
+            ranks[i] = rank
+        msg_12 = LossHead.retrieval_metrics(ranks, msg="A->T")
+
+        # x2 -> x1
+        x21 = x2s @ x1s.t()
+        nsample = x1s.shape[0]
+        ind_21 = x21.argsort(descending=True)
+        ranks = torch.zeros(nsample * k, device=x1s.device)
+        for i in range(nsample):
+            inds = ind_21[i * k : i * k + k]
+            for j in range(k):
+                ranks[i * k + j] = torch.where(inds[j : j + 1] == i)[1][0]
+        msg_21 = LossHead.retrieval_metrics(ranks, msg="T->A")
+        return f"{msg_12}\n{msg_21}"
         
     def report(self, gold_file=None):
         x1s = torch.cat(self.x1s)
@@ -123,9 +165,11 @@ class LossHead(nn.Module):
             mean = r21.float().mean() + 1
 
             p_21 = f"T->A: t1 = {t21_1:2.2f} t5 = {t21_5:2.2f} mR = {mean:2.2f}" 
+            ref_metric = self.retrieval_eval(x1s, x2s)
             gold_file = None
         else:
             p_12, p_21 = f"{x1s.shape}x{x2s.shape}", "-"
+            ref_metric = ""
             gold_file = None
 
         # stats per class
@@ -194,7 +238,8 @@ class LossHead(nn.Module):
 
         del self.x1s, self.x2s, self.ids
         msg = "" if msg_12 == msg_21 == "" else f"\n{msg_12} {msg_21}\n"
-        report = f"{msg}{p_12} {p_21} @ {x1s.shape[0]}"
+        ref = "" if ref_metric == "" else f"\nREFERENCE\n{ref_metric}"
+        report = f"{msg}{p_12} {p_21} @ {x1s.shape[0]}{ref}"
         return report
 
 @LOSS_HEADS_REGISTRY.register()
