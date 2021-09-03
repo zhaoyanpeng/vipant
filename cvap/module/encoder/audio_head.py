@@ -64,61 +64,55 @@ class AudioHead(nn.Module):
                 width=cfg.width,
                 heads=heads,
             )
-        self.time_first = getattr(cfg, "time_first", False)
 
     def copy_state_dict(self, state_dict): 
         excluded = ["conv1.weight", "positional_embedding", "attnpool.positional_embedding"]
         new_dict = self.encoder.state_dict()
         old_dict = {k: v for k, v in state_dict.items() if k not in excluded}
         # conv1: 3 channels -> 1 channel
-        old_dict["conv1.weight"] = state_dict["conv1.weight"].mean(1, keepdim=True)
+        key = "conv1.weight"
+        old_conv_weight = state_dict[key]
+        new_conv_weight = new_dict[key]
+        if new_conv_weight.shape[2:] != old_conv_weight.shape[2:]:
+            old_conv_weight = F.interpolate(
+                old_conv_weight,
+                new_conv_weight.shape[2:],
+                mode="bilinear",
+                align_corners=False,
+            )
         # interpolate positional embedding
-        if not isinstance(self.encoder, ModifiedResNet):
-            pos_resolution = self.encoder.position_resolution
-            old_pos_emb = state_dict["positional_embedding"]
-            num_pos, pos_dim = old_pos_emb.shape[:2]
-            num_pos_required = np.prod(pos_resolution)
-            if num_pos_required + 1 <= num_pos:
-                new_pos_emb = old_pos_emb[:num_pos_required + 1]
-            else:
-                num_pos = int(np.sqrt(num_pos - 1))
-                ptensor = old_pos_emb[1:].reshape(
-                    -1, num_pos, num_pos, pos_dim
-                ).permute(0, 3, 1, 2) 
-                new_pos_emb = F.interpolate(
-                    ptensor,
-                    pos_resolution,
-                    mode="bilinear",
-                    align_corners=False,
-                ).permute(0, 2, 3, 1).flatten(1, 2) 
-                new_pos_emb = torch.cat((
-                    old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
-                ), dim=0)
-            old_dict["positional_embedding"] = new_pos_emb 
+        if isinstance(self.encoder, ModifiedResNet):
+            key = "attnpool.positional_embedding"
         else:
-            pos_resolution = self.encoder.position_resolution
-            old_pos_emb = state_dict["attnpool.positional_embedding"]
-            num_pos, pos_dim = old_pos_emb.shape[:2]
-            num_pos_required = np.prod(pos_resolution)
-            if num_pos_required + 1 <= num_pos:
-                new_pos_emb = old_pos_emb[:num_pos_required + 1]
-            else:
-                num_pos = int(np.sqrt(num_pos - 1))
-                ptensor = old_pos_emb[1:].reshape(
-                    -1, num_pos, num_pos, pos_dim
-                ).permute(0, 3, 1, 2) 
-                new_pos_emb = F.interpolate(
-                    ptensor,
-                    pos_resolution,
-                    mode="bilinear",
-                    align_corners=False,
-                ).permute(0, 2, 3, 1).flatten(1, 2) 
-                new_pos_emb = torch.cat((
-                    old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
-                ), dim=0)
-            old_dict["attnpool.positional_embedding"] = new_pos_emb 
+            key = "positional_embedding"
+        pos_resolution = self.encoder.position_resolution
+        old_pos_emb = state_dict[key]
+        num_pos, pos_dim = old_pos_emb.shape[:2]
+
+        num_pos = int(np.sqrt(num_pos - 1))
+        ptensor = old_pos_emb[1:].reshape(
+            -1, num_pos, num_pos, pos_dim
+        ).permute(0, 3, 1, 2)
+
+        new_pos_emb = F.interpolate(
+            ptensor,
+            pos_resolution,
+            mode="bilinear",
+            align_corners=False,
+        ).permute(0, 2, 3, 1).flatten(1, 2)
+        new_pos_emb = torch.cat((
+            old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
+        ), dim=0)
+        old_dict[key] = new_pos_emb
+
+        new_keys = set(new_dict.keys())
+        old_keys = set(old_dict.keys())
         new_dict.update(old_dict)
         self.encoder.load_state_dict(new_dict)
+        n_o = new_keys - old_keys
+        o_n = old_keys - new_keys
+        #print(f"{n_o}\n{o_n}")
+        return n_o, o_n
 
     def forward(self, audios, *args, **kwargs):
         z = self.encoder(audios)

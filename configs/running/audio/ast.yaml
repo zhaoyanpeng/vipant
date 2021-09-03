@@ -9,6 +9,7 @@ htk_compat: True
 use_energy: False
 window_type: hanning
 num_mel_bins: 128
+zero_mean_wf: True
 # transform of audios 
 transform_audio: False
 audio_transforms:

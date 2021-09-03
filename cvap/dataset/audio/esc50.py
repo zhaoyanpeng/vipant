@@ -21,16 +21,18 @@ from clip import tokenize
 from .transform import make_transform, RandomCrop
 
 def _extract_kaldi_spectrogram(
-    filename, params, train=True, mean=False, max_audio_len=1000, transform_audio=None
+    filename, params, train=True, mean_channel=False, zero_mean_wf=False, max_audio_len=1000, transform_audio=None
 ):
     waveform, sample_rate = torchaudio.load(filename)
-    if mean: # mean along channel
+    if mean_channel: # mean along channel
         waveform = waveform.mean(0, keepdim=True)
     if transform_audio is not None:
         waveform = transform_audio(waveform) 
     waveform = RandomCrop.random_crop(
         waveform, int((max_audio_len / 100 + 0.05) * sample_rate), train=train
     ) # divided by 100 because kaldi has a frame shift of 10, additional 0.05s
+    if zero_mean_wf:
+        waveform = waveform - waveform.mean()
     fbank_feat = torchaudio.compliance.kaldi.fbank(
         waveform,
         sample_frequency=sample_rate,
@@ -226,7 +228,16 @@ def build_dataloader_list_us8k(cfg):
             lambda data_list=train_list: build_dataloader(cfg, data_list),
             lambda data_list=eval_list: build_dataloader(cfg, data_list, shuffle=False, train=False)
         ),)
-    lid2int = [lid2str[i].replace("_", " ") for i in range(len(lid2str))]
+
+    label_path = f"{rcfg.data_root}/meta/{rcfg.label_map}.json"
+    if not os.path.isfile(label_path):
+        prompt = rcfg.label_map.strip()
+        lid2int = [prompt + " " + lid2str[i].replace("_", " ") for i in range(len(lid2str))]
+        label_map = {i: i for i in range(len(lid2str))}
+    else:
+        lid2int = [lid2str[i].replace("_", " ") for i in range(len(lid2str))]
+        pass
+    print(lid2int)
     lid2int = tokenize(lid2int, as_list=True)
     lid2int = np.array(list(itertools.zip_longest(*lid2int, fillvalue=0))).T
     return loader_tuple, lid2str, lid2int, None

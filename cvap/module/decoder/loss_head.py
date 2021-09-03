@@ -131,6 +131,7 @@ class LossHead(nn.Module):
             t21_5 = torch.where(r21 < 5)[0].shape[0] / nsample * 100. 
 
             p_21 = f"A->I: t1 = {t21_1:2.2f} t5 = {t21_5:2.2f}" 
+            ref_metric = ""
         elif x1s.shape[0] * 5 == x2s.shape[0]:
             # x1 -> x2: 1 v 5 
             nsample = x2s.shape[0]

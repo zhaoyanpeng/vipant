@@ -1,6 +1,6 @@
 clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
 clip_model_name: "ViT-B32"
-data_root: "gs://yannaudioset" 
+data_root: "/home/yanpengz/data/audioset" #"gs://yannaudioset"
 data_name: 'src_train_toy'
 eval_name: 'src_eval_toy'
 test_name: 'src_eval_toy'
@@ -12,6 +12,7 @@ save_rate: 3
 batch_size: 64 
 epochs: 1000 
 save_epoch: False 
+frame_key: "frame"
 # vision backbone
 resolution: ${model.image.resolution}
 # audio backbone

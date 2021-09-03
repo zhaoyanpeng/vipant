@@ -2,11 +2,13 @@ import os
 import glob
 import json
 import torch
+import warnings
 import torchaudio
 import numpy as np
 import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
+from PIL import Image as PILImage
 from itertools import cycle, islice, chain
 from einops import rearrange, repeat
 
@@ -21,6 +23,7 @@ from .audio import (
 from .image_audio_gs import (
     ImageAudioDatasetNpzGS, ImageAudioDatasetSrcGS
 )
+from .ast import make_image_transform
 
 class ImageAudioDataset(data.Dataset):
     def __init__(self, cfg, data_name, train):
@@ -125,68 +128,105 @@ class ImageAudioDatasetSrc(data.Dataset):
             #self.dataset = np.random.choice(self.dataset, k, replace=False)
             shuffled_indice = np.random.permutation(np.random.permutation(len(self.dataset)))
             self.dataset = [self.dataset[i] for i in shuffled_indice[:k]]
+        self.audio_norms = cfg.audio.norms
+        # compatible with AudioSet and Balanced AudioSet
+        self.aclip_key = "clip" if "clip" in self.dataset[0] else "aclip"
+        self.frame_key = cfg.frame_key
         self.length = len(self.dataset)
         self.train = train
         self.cfg = cfg
         
         acfg = cfg.audio
+        self.transform_image = make_image_transform(cfg.resolution)
         self.transform_audio, self.transform_fbank = make_transform(acfg)
         self.kaldi_params = {
-            "use_log_fbank": acfg.use_log_fbank,
-            "frame_length": acfg.frame_length,
-            "frame_shift": acfg.frame_shift,
-            "window_type": acfg.window_type,
+            "htk_compat": True,
+            "use_energy": False,
+            "window_type": 'hanning',
             "num_mel_bins": acfg.num_mel_bins,
-            "high_freq": acfg.high_freq,
-            "low_freq": acfg.low_freq,
+            "dither": 0.0,
+            "frame_shift": 10
         }
 
     def _shuffle(self):
         pass
 
-    def __getitem__(self, index):
-        akey = "aclip"
-        fkey = "frame_224"
-        dir = self.dataset[index]["dir"] 
+    def _process_item(self, index):
+        akey = self.aclip_key
+        fkey = self.frame_key
+        sub_dir = self.dataset[index]["dir"]
         name = self.dataset[index]["id"] 
         aclip = self.dataset[index][akey][0] 
-        frame = self.dataset[index][fkey]
+        frame = images = self.dataset[index][fkey]
 
-        aclip_file = f"{self.cfg.data_root}/{dir}/{akey}/{name}.{aclip}"
-        frame_file = f"{self.cfg.data_root}/{dir}/{fkey}/{name}.{frame}"
-
-        max_audio_len = self.cfg.max_audio_len
-
-        images = np.load(frame_file)
-        images = [images[key] for key in images.files if len(images[key]) != 0]
-        assert len(images) != 0, f"no frame exist: |images| = {len(images)}"
-        if self.train:
-            idx = np.random.choice(len(images), 1)[0]
+        sub_dir = "" if len(sub_dir) == 0 else f"{sub_dir}/"
+        aclip_file = f"{self.cfg.data_root}/{sub_dir}{akey}/{name}.{aclip}"
+        if isinstance(frame, str):
+            frame_file = f"{self.cfg.data_root}/{sub_dir}{fkey}/{name}.{frame}"
         else:
-            idx = int(np.ceil(len(images) / 2)) - 1
-        image = images[idx] 
-        
+            idx = np.random.choice(len(images), 1)[0] if self.train else int(np.ceil(len(images) / 2)) - 1
+            frame_file = f"{self.cfg.data_root}/{sub_dir}{fkey}/{name}.{images[idx]}"
+
+        return name, aclip_file, frame_file
+
+    def _image2numpy(self, fname):
+        if fname is not None:
+            try:
+                if fname.endswith(".npz"):
+                    images = np.load(fname)
+                    images = [images[key] for key in images.files if len(images[key]) != 0]
+                    idx = np.random.choice(len(images), 1)[0] if self.train else int(np.ceil(len(images) / 2)) - 1
+                    image = images[idx]
+                else:
+                    image = PILImage.open(fname)
+                    image = self.transform_image(image).cpu().numpy()
+            except Exception as e:
+                h = w = self.cfg.resolution
+                image = PILImage.fromarray(
+                    (np.random.rand(h, w, 3) * 256).astype(np.uint8)
+                )
+                warnings.warn(f"use random image instead because `{e}` {fname}.")
+                image = self.transform_image(image).cpu().numpy()
+        else:
+            image = np.array([[[1]]])
+        return image
+
+    def _audio2numpy(self, aclip_file):
         max_audio_len = self.cfg.max_audio_len
         audio = _extract_kaldi_spectrogram(
             aclip_file,
             self.kaldi_params,
             train=self.train,
             max_audio_len=max_audio_len,
-            transform_audio=(self.transform_audio if self.train else None)
+            zero_mean_wf=self.cfg.audio.zero_mean_wf,
+            transform_audio=(
+                self.transform_audio if self.train and not self.cfg.audio.eval_norms else None
+            )
         ) # (..., time, freq)
 
-        if self.train and self.transform_fbank is not None:
-            audio = self.transform_fbank(audio)
-
-        npad =  self.cfg.max_audio_len - audio.shape[0]
+        npad = max_audio_len - audio.shape[0]
         if npad > 0:
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
-        
+
+        if not self.cfg.audio.eval_norms and len(self.audio_norms) == 2:
+            mean, std = self.audio_norms
+            audio = (audio - mean) / std
+
+        #if self.train and self.transform_fbank is not None:
+        if not self.cfg.audio.eval_norms and self.train and self.transform_fbank is not None:
+            audio = self.transform_fbank(audio)
+        return audio
+
+    def __getitem__(self, index):
+        name, aclip_file, frame_file = self._process_item(index)
+
+        image = self._image2numpy(frame_file)
+        audio = self._audio2numpy(aclip_file)
+
         image = image[None]
         audio = audio[None]
-
         item = {"image": image, "audio": audio, "name": name}
-        return item 
+        return item
 
     def __len__(self):
         return self.length
@@ -206,16 +246,6 @@ class ImageAudioCollator:
             np.concatenate(union["audio"], axis=0),
             union["name"],
         )
-        union = {
-            "image": torch.tensor(
-                np.concatenate(union["image"], axis=0), device=self.device
-            ), 
-            "audio": torch.tensor(
-                np.concatenate(union["audio"], axis=0), device=self.device
-            ).unsqueeze(1), 
-            "name": union["name"],
-        }
-        return union
 
 def build_dataloader(cfg, data_name, shuffle=True, train=True):
     ddp_mode = torch.distributed.is_initialized()

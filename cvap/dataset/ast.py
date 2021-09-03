@@ -203,6 +203,7 @@ class ASTSrc(data.Dataset):
         self.audio_norms = cfg.audio.norms
         # compatible with AudioSet and Balanced AudioSet
         self.aclip_key = "clip" if "clip" in self.dataset[0] else "aclip"
+        self.frame_key = "frame"
         self.train = train
         self.cfg = cfg
         
@@ -223,7 +224,7 @@ class ASTSrc(data.Dataset):
 
     def _process_item(self, index):
         akey = self.aclip_key
-        fkey = "frame"
+        fkey = self.frame_key
         sub_dir = self.dataset[index]["dir"] 
         name = self.dataset[index]["id"] 
         aclip = self.dataset[index][akey][0] 
@@ -317,7 +318,7 @@ class ASTSrc(data.Dataset):
 
         if not self.cfg.audio.eval_norms and len(self.audio_norms) == 2:
             mean, std = self.audio_norms
-            audio = (audio - mean) / (std * 2) 
+            audio = (audio - mean) / std
 
         #if self.train and self.transform_fbank is not None:
         if not self.cfg.audio.eval_norms and self.train and self.transform_fbank is not None:

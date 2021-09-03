@@ -12,6 +12,7 @@ save_rate: 3
 batch_size: 64 
 epochs: 1000 
 save_epoch: False 
+frame_key: "frame"
 # vision backbone
 resolution: ${model.image.resolution}
 # audio backbone
