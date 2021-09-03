@@ -80,6 +80,7 @@ class AudioHead(nn.Module):
                 mode="bilinear",
                 align_corners=False,
             )
+        old_dict[key] = old_conv_weight.mean(1, keepdim=True)
         # interpolate positional embedding
         if isinstance(self.encoder, ModifiedResNet):
             key = "attnpool.positional_embedding"

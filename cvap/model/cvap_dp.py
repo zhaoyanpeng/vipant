@@ -93,8 +93,9 @@ class CVAPDP(nn.Module):
 
             self.audio_head = build_audio_head(self.cfg.model.audio)
             if not from_scratch and not self.cfg.model.audio.from_scratch:
-                self.audio_head.copy_state_dict(image_head_sd)
-                self.echo("Initialize audio encoder from `image_head`.")
+                n_o, o_n = self.audio_head.copy_state_dict(image_head_sd)
+                msg = f" except {n_o}" if len(n_o) > 0 else ""
+                self.echo(f"Initialize audio encoder from `image_head`{msg}.")
                 
             self.loss_head = build_loss_head(self.cfg.model.loss)
             if not from_scratch and not self.cfg.model.audio.from_scratch:
