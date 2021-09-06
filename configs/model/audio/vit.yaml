@@ -1,4 +1,4 @@
-name: 'AudioHead'
+name: 'NaiveCLIPAudioHead'
 freeze: False
 from_scratch: False
 embed_dim: ${model.image.embed_dim}

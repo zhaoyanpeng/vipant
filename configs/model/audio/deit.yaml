@@ -1,4 +1,4 @@
-name: 'DeiTAudioHead'
+name: 'NaiveDeiTAudioHead'
 freeze: False
 from_scratch: False
 embed_dim: ${model.image.embed_dim}

@@ -38,8 +38,55 @@ def position_resolution(input_resolution, patch_size, stride):
     ncol = (input_resolution[1] - patch_size[1]) // col_stride + 1
     return nrow, ncol
 
+def interp_conv_weight(old_dict, new_dict, key):
+    old_conv_weight = old_dict[key]
+    new_conv_weight = new_dict[key]
+    if new_conv_weight.shape[2:] != old_conv_weight.shape[2:]:
+        old_conv_weight = F.interpolate(
+            old_conv_weight,
+            new_conv_weight.shape[2:],
+            mode="bilinear",
+            align_corners=False,
+        )
+    return old_conv_weight
+
+def interp_pos_embedding(state_dict, old_dict, new_dict, key, bop, pos_resolution):
+    """bop: start position of the postional embeddings"""
+    add_leading_dim = False
+    old_pos_emb = state_dict[key]
+    if old_pos_emb.dim() == 3: # ensure of rank-2 tensor
+        assert old_pos_emb.shape[0] == 1
+        old_pos_emb = old_pos_emb.squeeze(0)
+        add_leading_dim = True
+    num_pos, pos_dim = old_pos_emb.shape[-2:]
+
+    num_pos = int(np.sqrt(num_pos - bop))
+    ptensor = old_pos_emb[bop:].reshape(
+        -1, num_pos, num_pos, pos_dim
+    ).permute(0, 3, 1, 2)
+
+    new_pos_emb = F.interpolate(
+        ptensor,
+        pos_resolution,
+        mode="bilinear",
+        align_corners=False,
+    ).permute(0, 2, 3, 1).flatten(1, 2)
+    new_pos_emb = torch.cat((
+        old_pos_emb[:bop], new_pos_emb.view(-1, pos_dim)
+    ), dim=0)
+    new_pos_emb = new_pos_emb.unsqueeze(0) if add_leading_dim else new_pos_emb
+    old_dict[key] = new_pos_emb
+
+    new_keys = set(new_dict.keys())
+    old_keys = set(old_dict.keys())
+    new_dict.update(old_dict)
+    n_o = new_keys - old_keys
+    o_n = old_keys - new_keys
+    #print(f"{n_o}\n{o_n}")
+    return n_o, o_n
+
 @AUDIO_HEADS_REGISTRY.register()
-class AudioHead(nn.Module):
+class NaiveCLIPAudioHead(nn.Module):
     def __init__(self, cfg, **kwargs):
         super().__init__()
         if isinstance(cfg.layers, (tuple, list, ListConfig)):
@@ -70,49 +117,17 @@ class AudioHead(nn.Module):
         new_dict = self.encoder.state_dict()
         old_dict = {k: v for k, v in state_dict.items() if k not in excluded}
         # conv1: 3 channels -> 1 channel
-        key = "conv1.weight"
-        old_conv_weight = state_dict[key]
-        new_conv_weight = new_dict[key]
-        if new_conv_weight.shape[2:] != old_conv_weight.shape[2:]:
-            old_conv_weight = F.interpolate(
-                old_conv_weight,
-                new_conv_weight.shape[2:],
-                mode="bilinear",
-                align_corners=False,
-            )
-        old_dict[key] = old_conv_weight.mean(1, keepdim=True)
+        conv_key = "conv1.weight"
+        old_conv_weight = interp_conv_weight(state_dict, new_dict, conv_key)
+        old_dict[conv_key] = old_conv_weight.mean(1, keepdim=True)
         # interpolate positional embedding
-        if isinstance(self.encoder, ModifiedResNet):
-            key = "attnpool.positional_embedding"
-        else:
-            key = "positional_embedding"
-        pos_resolution = self.encoder.position_resolution
-        old_pos_emb = state_dict[key]
-        num_pos, pos_dim = old_pos_emb.shape[:2]
-
-        num_pos = int(np.sqrt(num_pos - 1))
-        ptensor = old_pos_emb[1:].reshape(
-            -1, num_pos, num_pos, pos_dim
-        ).permute(0, 3, 1, 2)
-
-        new_pos_emb = F.interpolate(
-            ptensor,
-            pos_resolution,
-            mode="bilinear",
-            align_corners=False,
-        ).permute(0, 2, 3, 1).flatten(1, 2)
-        new_pos_emb = torch.cat((
-            old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
-        ), dim=0)
-        old_dict[key] = new_pos_emb
-
-        new_keys = set(new_dict.keys())
-        old_keys = set(old_dict.keys())
-        new_dict.update(old_dict)
+        key = ("attnpool.positional_embedding"
+            if isinstance(self.encoder, ModifiedResNet) else "positional_embedding"
+        )
+        n_o, o_n = interp_pos_embedding(
+            state_dict, old_dict, new_dict, key, 1, self.encoder.position_resolution
+        )
         self.encoder.load_state_dict(new_dict)
-        n_o = new_keys - old_keys
-        o_n = old_keys - new_keys
-        #print(f"{n_o}\n{o_n}")
         return n_o, o_n
 
     def forward(self, audios, *args, **kwargs):
@@ -121,6 +136,53 @@ class AudioHead(nn.Module):
             z = z / z.norm(dim=-1, keepdim=True)
             #print(f"{threading.current_thread().ident} audio --{kwargs.get('normalized', False)}")
         return z 
+
+@AUDIO_HEADS_REGISTRY.register()
+class NaiveDeiTAudioHead(nn.Module):
+    def __init__(self, cfg, **kwargs):
+        super().__init__()
+        heads = cfg.width // 64
+        self.encoder = DistilledVisionTransformer(
+            img_size=cfg.resolution,
+            # hack and has to be used with the customized `PatchEmbed`
+            patch_size={"patch_size": cfg.patch_size, "stride": cfg.stride},
+            representation_size=False,
+            output_dim=cfg.embed_dim,
+            embed_dim=cfg.width,
+            depth=cfg.layers,
+            num_heads=heads,
+            mlp_ratio=4,
+            qkv_bias=True,
+            in_chans=1,
+            num_classes=-1,
+            embed_layer=PatchEmbed,
+            norm_layer=partial(nn.LayerNorm, eps=1e-6),
+            **kwargs
+        )
+
+    def copy_state_dict(self, state_dict):
+        excluded = ["patch_embed.proj.weight", "pos_embed"]
+        new_dict = self.encoder.state_dict()
+        old_dict = {k: v for k, v in state_dict.items() if k not in excluded and k in new_dict}
+        # conv1: 3 channels -> 1 channel
+        conv_key = "patch_embed.proj.weight"
+        old_conv_weight = interp_conv_weight(state_dict, new_dict, conv_key)
+        old_dict[conv_key] = old_conv_weight.mean(1, keepdim=True)
+        # interpolate positional embedding
+        key = "pos_embed"
+        n_o, o_n = interp_pos_embedding(
+            state_dict, old_dict, new_dict, key, 2, self.encoder.patch_embed.grid_size
+        )
+        self.encoder.load_state_dict(new_dict)
+        return n_o, o_n
+
+    def forward(self, audios, *args, **kwargs):
+        cls_z, distilled_z = self.encoder.forward_features(audios)
+        z = (cls_z + distilled_z) / 2
+        if kwargs.get("normalized", False):
+            z = z / z.norm(dim=-1, keepdim=True)
+            #print(f"{threading.current_thread().ident} image --{kwargs.get('normalized', False)}")
+        return z
 
 @AUDIO_HEADS_REGISTRY.register()
 class DeiTAudioHead(nn.Module):

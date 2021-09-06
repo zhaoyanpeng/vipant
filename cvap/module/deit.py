@@ -47,7 +47,7 @@ class PatchEmbed(nn.Module):
         return x
 
 class DistilledVisionTransformer(VisionTransformer):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, output_dim=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.dist_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
         num_patches = self.patch_embed.num_patches
@@ -57,6 +57,9 @@ class DistilledVisionTransformer(VisionTransformer):
         trunc_normal_(self.dist_token, std=.02)
         trunc_normal_(self.pos_embed, std=.02)
         self.head_dist.apply(self._init_weights)
+
+        scale = self.embed_dim ** -0.5
+        self.proj = nn.Parameter(scale * torch.randn(self.embed_dim, output_dim)) if output_dim is not None else None
 
     def forward_features(self, x):
         # taken from https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
@@ -77,7 +80,11 @@ class DistilledVisionTransformer(VisionTransformer):
         x = self.norm(x)
         # non-linear operator because of Tanh activation function, it might be desired because we want to use
         # classification head as the head for contrastive learning 
-        x = self.pre_logits(x) 
+        # still, we only want a simple projection layer
+        if self.proj is not None:
+            x = x[:, :2] @ self.proj
+        else:
+            x = self.pre_logits(x)
         return x[:, 0], x[:, 1]
 
     def forward(self, x):

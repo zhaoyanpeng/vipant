@@ -1,3 +1,4 @@
+from .helper import *
 from .audioset_classifier import AudioSetClassifier
 from .audio_classifier import AudioClassifier
 from .ast import ASTClassifier
