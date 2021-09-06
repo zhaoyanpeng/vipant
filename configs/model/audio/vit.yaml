@@ -5,6 +5,7 @@ embed_dim: ${model.image.embed_dim}
 meme_path: ''
 meme_name: ''
 time_first: True
+in_channel: 1
 resolution: 
 - ${running.max_audio_len}
 - ${running.num_mel_bins} 

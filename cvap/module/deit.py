@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from functools import partial
 
 import timm
@@ -40,7 +41,13 @@ class PatchEmbed(nn.Module):
         B, C, H, W = x.shape
         assert H == self.img_size[0] and W == self.img_size[1], \
             f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
-        x = self.proj(x)
+        if x.shape[1] != self.proj.weight.shape[1]: # interpolate weight
+            conv1_weight = self.proj.weight.mean(1, keepdim=True)
+            x = F.conv2d(
+                x, conv1_weight, bias=self.proj.bias, stride=self.proj.stride
+            )
+        else:
+            x = self.proj(x)
         if self.flatten:
             x = x.flatten(2).transpose(1, 2)  # BCHW -> BNC
         x = self.norm(x)

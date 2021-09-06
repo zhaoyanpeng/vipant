@@ -50,7 +50,13 @@ class VisualTransformer(nn.Module):
 
     def forward(self, x: torch.Tensor, require_feature: bool=False):
         x = x.type(self.dtype)
-        x = self.conv1(x)  # shape = [*, width, grid, grid]
+        if x.shape[1] != self.conv1.weight.shape[1]: # interpolate weight
+            conv1_weight = self.conv1.weight.mean(1, keepdim=True)
+            x = F.conv2d(
+                x, conv1_weight, bias=self.conv1.bias, stride=self.conv1.stride
+            )
+        else:
+            x = self.conv1(x)  # shape = [*, width, grid, grid]
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]

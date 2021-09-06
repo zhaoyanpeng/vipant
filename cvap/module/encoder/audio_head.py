@@ -92,7 +92,7 @@ class NaiveCLIPAudioHead(nn.Module):
         if isinstance(cfg.layers, (tuple, list, ListConfig)):
             heads = cfg.width * 32 // 64
             self.encoder = ModifiedResNet(
-                in_channels=1,
+                in_channels=cfg.in_channel,
                 input_resolution=cfg.resolution,
                 output_dim=cfg.embed_dim,
                 layers=cfg.layers,
@@ -102,7 +102,7 @@ class NaiveCLIPAudioHead(nn.Module):
         else:
             heads = cfg.width // 64
             self.encoder = VisualTransformer(
-                in_channels=1,
+                in_channels=cfg.in_channel,
                 stride=cfg.stride,
                 input_resolution=cfg.resolution,
                 output_dim=cfg.embed_dim,
@@ -119,7 +119,9 @@ class NaiveCLIPAudioHead(nn.Module):
         # conv1: 3 channels -> 1 channel
         conv_key = "conv1.weight"
         old_conv_weight = interp_conv_weight(state_dict, new_dict, conv_key)
-        old_dict[conv_key] = old_conv_weight.mean(1, keepdim=True)
+        old_dict[conv_key] = (old_conv_weight.mean(1, keepdim=True)
+            if new_dict[conv_key].shape[1] != old_conv_weight.shape[1] else old_conv_weight
+        )
         # interpolate positional embedding
         key = ("attnpool.positional_embedding"
             if isinstance(self.encoder, ModifiedResNet) else "positional_embedding"
@@ -153,7 +155,7 @@ class NaiveDeiTAudioHead(nn.Module):
             num_heads=heads,
             mlp_ratio=4,
             qkv_bias=True,
-            in_chans=1,
+            in_chans=cfg.in_channel,
             num_classes=-1,
             embed_layer=PatchEmbed,
             norm_layer=partial(nn.LayerNorm, eps=1e-6),
@@ -167,7 +169,9 @@ class NaiveDeiTAudioHead(nn.Module):
         # conv1: 3 channels -> 1 channel
         conv_key = "patch_embed.proj.weight"
         old_conv_weight = interp_conv_weight(state_dict, new_dict, conv_key)
-        old_dict[conv_key] = old_conv_weight.mean(1, keepdim=True)
+        old_dict[conv_key] = (old_conv_weight.mean(1, keepdim=True)
+            if new_dict[conv_key].shape[1] != old_conv_weight.shape[1] else old_conv_weight
+        )
         # interpolate positional embedding
         key = "pos_embed"
         n_o, o_n = interp_pos_embedding(
