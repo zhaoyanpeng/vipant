@@ -18,3 +18,10 @@ resolution: ${model.image.resolution}
 # audio backbone
 max_audio_len: ${running.audio.max_len}
 num_mel_bins: ${running.audio.num_mel_bins}
+#off # on: true interpreted by YAML, so on/off cannot be used as the keys 
+#share, or not share; the image head as the reference
+siamese: 
+    alive: False 
+    keep_hp: True # keep run-time hyperparameters 
+    amodules: [] #, "pre_encoder", "post_encoder", "misc"]
+    lmodules: [] #"encoder"]

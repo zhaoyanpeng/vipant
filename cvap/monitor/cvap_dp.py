@@ -14,7 +14,7 @@ from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
 from ..util import numel
-from ..model import CVAPDP as Model
+from ..model import build_main_model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_dataloader 
 
@@ -28,7 +28,7 @@ class Monitor(object):
         if self.cfg.running.audio.eval_norms:
             self.eval_norms()
             return # mean & std of the data
-        model = Model(cfg, echo)
+        model = build_main_model(cfg, echo)
         tunable_params = model.build()
         self.model = DistributedDataParallel(
             model, device_ids=[cfg.rank], find_unused_parameters=True
@@ -172,7 +172,7 @@ class Monitor(object):
 
             self.optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast():
-                loss = self.model(images, audios, device_ids=device_ids)
+                loss = self.model(images, audios, None, device_ids=device_ids)
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
@@ -236,7 +236,7 @@ class Monitor(object):
             images, audios, names = self.make_batch(batch)
             #msg = f"{images[0, 0, 50, 50:55]} {audios[0, 0, 50, 50:55]}" # if ibatch == 0 else ""
             #print(f"{nsample}\t{ibatch}/{nbatch} done {msg}")
-            loss = self.model(images, audios, device_ids=device_ids, names=names)
+            loss = self.model(images, audios, None, device_ids=device_ids, names=names)
             nsample += images.shape[0] * nchunk
             losses += loss or 0.
             if self.cfg.rank == 0 and (ibatch + 1) % peep_rate == 0:

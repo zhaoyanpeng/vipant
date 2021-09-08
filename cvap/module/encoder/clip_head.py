@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .. import build_encoder_module, interp_clip_vp_embedding
+from .. import build_encoder_module, interp_clip_vp_embedding, interp_conv_weight_spatial
 
 """ The idea is to abstract an encoding head as a four-layer encoder. 
     (1) backbone encoder (most likely to be shared)
@@ -60,24 +60,22 @@ class MetaHead(nn.Module):
         kwargs.update({
             "position_resolution": position_resolution
         })
-        if "misc" in shared_modules:
-            kwargs.update({
-                "reference": eval("reference.misc") 
-            })
         self.misc = build_encoder_module(cfg.misc, **kwargs)
 
         # time to share modules
-        self.replace_modules(shared_modules, reference, keep_hp=keep_hp)
+        #self.replace_modules(shared_modules, reference, keep_hp=keep_hp)
 
-    def replace_modules(self, shared_modules, reference, keep_hp=False):
+    def replace_modules(self, shared_modules=[], reference=None, keep_hp=False, **kwargs):
         """ keep_hp: keep selected hyperparameters
         """
         if len(shared_modules) < 1 or reference is None:
-            return
-        module_list = ["encoder", "pre_encoder", "post_encoder"]
+            return []
+        module_list = ["encoder", "pre_encoder", "post_encoder", "misc"]
+        ref_modules = list()
         for module in module_list:
             if module not in shared_modules: 
                 continue
+            ref_modules.append(module)
             self_module = eval(f"self.{module}")
             refr_module = eval(f"reference.{module}")
             #print(f"RP A {module} {self_module.hp} {refr_module.hp} {self_module == refr_module}")
@@ -92,6 +90,7 @@ class MetaHead(nn.Module):
                     exec(f"self.{module}.hp = {hp}") # so the `reference` is modified
                 new_self_module = eval(f"self.{module}")
                 #print(f"RP C {module} {self_module.hp} {refr_module.hp} {self_module == refr_module} {new_self_module == refr_module}")
+        return ref_modules
 
     def forward(self, x: torch.Tensor, *args, **kwargs):
         kwargs.update({
@@ -108,6 +107,10 @@ class MetaHead(nn.Module):
 
         x = self.post_encoder_addon(x, **kwargs) 
         x = self.post_encoder(x, **kwargs) 
+
+        if kwargs.get("normalized", False):
+            x = x / x.norm(dim=-1, keepdim=True)
+            #print(f"{threading.current_thread().ident} x --{kwargs.get('normalized', False)}")
         return x
 
 class CLIPImageHead(MetaHead):
@@ -200,7 +203,12 @@ class CLIPAudioHead(MetaHead):
             old_dict[new_key] = interp_clip_vp_embedding(
                 old_dict.pop(pos_key), self.misc.position_resolution
             )
+        # take care of conv1
         new_dict = self.state_dict()
+        conv_key = "pre_encoder.conv1.weight"
+        conv_weight = interp_conv_weight_spatial(old_dict[conv_key], new_dict[conv_key].shape[-2:])
+        old_dict[conv_key] = conv_weight
+        # update
         new_keys = set(new_dict.keys())
         old_keys = set(old_dict.keys())
         new_dict.update(old_dict)

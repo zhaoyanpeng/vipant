@@ -7,4 +7,4 @@ from .clip_head import (
 )
 IMAGE_HEADS_REGISTRY.register(CLIPImageHead)
 AUDIO_HEADS_REGISTRY.register(CLIPAudioHead)
-TEXT_HEADS_REGISTRY.register(CLIPTextHead )
+TEXT_HEADS_REGISTRY.register(CLIPTextHead)

@@ -22,6 +22,12 @@ from .audio import (
 from .audioset_cap import AudioCapDatasetSrc
 from clip import tokenize
 
+###
+# this file ocntains the very first implementations of AudioSet data loader.
+# we now have clf-focused loader in ast.py and audioset_ast.py
+# and contrastive-focused loader in image_audio.py and this file.
+###
+
 class AudiosetDatasetNpz(data.Dataset):
     """ `__getitem__' loads .npz from disk.
     """

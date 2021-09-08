@@ -17,8 +17,15 @@ def load_checkpoint(cfg, echo):
     local_cfg = checkpoint["cfg"]
     local_str = OmegaConf.to_yaml(local_cfg)
     echo(f"Old configs:\n\n{local_str}")
-    audio_head_sd, loss_head_sd = checkpoint["model"]
-    return local_cfg, audio_head_sd, loss_head_sd 
+    nmodule = len(checkpoint["model"])
+    if nmodule == 2:
+        audio_head_sd, loss_head_sd = checkpoint["model"]
+        return local_cfg, audio_head_sd, loss_head_sd
+    elif nmodule == 4:
+        image_head_sd, audio_head_sd, text_head_sd, loss_head_sd = checkpoint["model"]
+        return local_cfg, image_head_sd, audio_head_sd, text_head_sd, loss_head_sd
+    else:
+        raise ValueError(f"I don't know how to parse the checkpoint: # module is {nmodule}.")
 
 def load_clip(local_cfg, cfg, echo):
     try: # try image / text backbone

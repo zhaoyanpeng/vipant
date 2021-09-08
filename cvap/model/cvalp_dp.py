@@ -21,6 +21,9 @@ from clip import load
 from ..module import (
     build_image_head, build_audio_head, build_text_head, build_loss_head
 )
+from . import (
+    load_checkpoint, load_clip, load_meme
+)
 
 class CVALPDP(nn.Module):
     def __init__(self, cfg, echo):
@@ -31,17 +34,17 @@ class CVALPDP(nn.Module):
     def forward(self, images, audios, text, *args, **kwargs):
         device_ids = kwargs.get("device_ids", [0])
         # how to asynchronize the two `data_parallel` 
-        kwargs = {"normalized": False, "names": kwargs.get("names", None)}
+        kwargs = {"normalized": self.loss_head.normalized, "names": kwargs.get("names", None)}
         image_features = audio_features = text_features = None
-        if images is not None:
+        if images is not None and self.image_head is not None:
             image_features = data_parallel(
                 self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
             )
-        if audios is not None:
+        if audios is not None and self.audio_head is not None:
             audio_features = data_parallel(
                 self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
             )
-        if text is not None:
+        if text is not None and self.text_head is not None:
             text_features = data_parallel(
                 self.text_head, text, device_ids=device_ids, module_kwargs=kwargs
             )
@@ -67,13 +70,13 @@ class CVALPDP(nn.Module):
         return text_features
 
     def collect_audio_state_dict(self):
-        return self.collect_state_dict() 
+        return self.collect_state_dict()
 
     def collect_state_dict(self):
         return (
-            self.image_head.state_dict(), 
-            self.audio_head.state_dict(), 
-            self.text_head.state_dict(), 
+            self.image_head.state_dict(),
+            self.audio_head.state_dict(),
+            self.text_head.state_dict() if self.text_head is not None else OrderedDict(),
             self.loss_head.state_dict(),
         )
 
@@ -87,20 +90,8 @@ class CVALPDP(nn.Module):
     
     def build(self, **kwargs):
         tunable_params = dict()
-        def load_checkpoint():
-            model_file = f"{self.cfg.model_root}/{self.cfg.model_name}/{self.cfg.model_file}"
-            self.echo(f"Loading from {model_file}")
-            if not os.path.isfile(model_file):
-                return None, None, None 
-            checkpoint = torch.load(model_file, map_location="cpu")
-            local_cfg = checkpoint["cfg"]
-            local_str = OmegaConf.to_yaml(local_cfg)
-            #self.echo(f"Old configs:\n\n{local_str}")
-            image_head_sd, audio_head_sd, text_head_sd, loss_head_sd = checkpoint["model"]
-            return local_cfg, image_head_sd, audio_head_sd, text_head_sd, loss_head_sd 
-
         if self.cfg.eval:
-            local_cfg, image_head_sd, audio_head_sd, text_head_sd, loss_head_sd = load_checkpoint()
+            local_cfg, image_head_sd, audio_head_sd, text_head_sd, loss_head_sd = load_checkpoint(self.cfg, self.echo)
             
             self.image_head = build_image_head(local_cfg.model.image)
             self.image_head.load_state_dict(image_head_sd)
@@ -123,34 +114,15 @@ class CVALPDP(nn.Module):
             self.cuda(self.cfg.rank)
         return tunable_params
 
-    def _load_clip(self, local_cfg):
-        try: # try image / text backbone
-            rcfg = self.cfg.running
-            model, self.T = load(
-                rcfg.clip_model_name, rcfg.clip_model_root, device="cpu", jit=False
-            )
-            image_head_sd = model.visual.state_dict() if local_cfg is None else None
-            text_head_sd = OrderedDict()
-            for k, v in model.state_dict().items():
-                if k.startswith("visual") or k == "logit_scale":
-                    continue
-                #k = re.sub("^transformer\.", "encoder.", k)
-                text_head_sd[k] = v
-            from_scratch = False
-        except Exception as e:
-            self.echo(f"Will learn from scratch because: {e}") 
-            self.T = image_head_sd = text_head_sd = None 
-            from_scratch = True
-        return from_scratch, image_head_sd, text_head_sd, model 
-
     def _build_siamese_backbone(self, **kwargs):
-        from_scratch, image_head_sd, text_head_sd, _ = self._load_clip(None) 
+        from_scratch, image_head_sd, text_head_sd, _ = load_clip(None, self.cfg, self.echo)
 
         # image_head's parameters as the reference
         self.image_head = build_image_head(self.cfg.model.image)
         if not from_scratch and not self.cfg.model.image.from_scratch:
-            self.image_head.copy_state_dict(image_head_sd)
-            self.echo("Initialize image encoder from `image_head`.")
+            n_o, o_n = self.image_head.copy_state_dict(image_head_sd)
+            msg = f" except {n_o}" if len(n_o) > 0 else ""
+            self.echo(f"Initialize image encoder from `image_head`{msg}.")
         scfg = self.cfg.running.siamese
 
         # shared modules with audio_head
@@ -159,11 +131,26 @@ class CVALPDP(nn.Module):
             "shared_modules": amodules, "reference": self.image_head, "keep_hp": scfg.keep_hp
         }
         self.audio_head = build_audio_head(self.cfg.model.audio, **kwargs)
+        if not from_scratch and not self.cfg.model.audio.from_scratch:
+            n_o, o_n = self.audio_head.copy_state_dict(image_head_sd)
+            msg = f" except {n_o}" if len(n_o) > 0 else ""
+            self.echo(f"Initialize audio encoder from `image_head`{msg}.")
+        ref_modules = self.audio_head.replace_modules(**kwargs)
+        self.echo(f"A: audio_head.modules referring to image_head.modules: {ref_modules}.")
 
         # shared modules with text_head 
         lmodules = set(scfg.lmodules)
         kwargs.update({"shared_modules": lmodules})
         self.text_head = build_text_head(self.cfg.model.text, **kwargs)
+        if not from_scratch and not self.cfg.model.text.from_scratch:
+            n_o, o_n = self.text_head.copy_state_dict(image_head_sd)
+            msg = f" except {n_o}" if len(n_o) > 0 else ""
+            self.echo(f"Initialize text encoder from `image_head`{msg}.")
+        ref_modules = self.text_head.replace_modules(**kwargs)
+        self.echo(f"T:  text_head.modules referring to image_head.modules: {ref_modules}.")
+        if len(self.text_head.state_dict()) == 0:
+            self.text_head = None
+            self.echo("Destory text encoder.")
 
         self.loss_head = build_loss_head(self.cfg.model.loss)
 
@@ -179,41 +166,47 @@ class CVALPDP(nn.Module):
             pattern = "|".join([f"^{m}\." for m in shared_modules])
             tunable_params.update({
                 f"image_head.{k}": v for k, v in self.image_head.named_parameters()
-            if re.match(pattern, k)}) # shared parameters must be tunable
+            if pattern != "" and re.match(pattern, k)}) # shared parameters must be tunable
             self.echo(f"Freeze image encoder (excl. shared modules: {shared_modules}).")
         if not self.cfg.model.audio.freeze:
             pattern = "|".join([f"^{m}\." for m in amodules])
             tunable_params.update({
                 f"audio_head.{k}": v for k, v in self.audio_head.named_parameters()
-            if not re.match(pattern, k)}) # filter out shared parameters
+            if pattern == "" or not re.match(pattern, k)}) # filter out shared parameters
         else:
             self.echo("Freeze audio encoder.")
-        if not self.cfg.model.text.freeze:
+        if not self.cfg.model.text.freeze and self.text_head is not None:
             pattern = "|".join([f"^{m}\." for m in lmodules])
             tunable_params.update({
                 f"text_head.{k}": v for k, v in self.text_head.named_parameters()
-            if not re.match(pattern, k)}) # filter out shared parameters
-        else:
+            if pattern == "" or not re.match(pattern, k)}) # filter out shared parameters
+        elif self.text_head is not None:
             self.echo("Freeze text encoder.")
         return tunable_params
 
     def _build_separate_backbone(self, **kwargs):
-        from_scratch, image_head_sd, text_head_sd, _ = self._load_clip(None) 
+        from_scratch, image_head_sd, text_head_sd, _ = load_clip(None, self.cfg, self.echo)
             
         self.image_head = build_image_head(self.cfg.model.image)
         if not from_scratch and not self.cfg.model.image.from_scratch:
-            self.image_head.copy_state_dict(image_head_sd)
-            self.echo("Initialize image encoder from `image_head`.")
+            n_o, o_n = self.image_head.copy_state_dict(image_head_sd)
+            msg = f" except {n_o}" if len(n_o) > 0 else ""
+            self.echo(f"Initialize image encoder from `image_head`{msg}.")
 
         self.audio_head = build_audio_head(self.cfg.model.audio)
         if not from_scratch and not self.cfg.model.audio.from_scratch:
-            self.audio_head.copy_state_dict(image_head_sd)
-            self.echo("Initialize audio encoder from `image_head`.")
+            n_o, o_n = self.audio_head.copy_state_dict(image_head_sd)
+            msg = f" except {n_o}" if len(n_o) > 0 else ""
+            self.echo(f"Initialize audio encoder from `image_head`{msg}.")
 
         self.text_head = build_text_head(self.cfg.model.text)
         if not from_scratch and not self.cfg.model.text.from_scratch:
-            self.text_head.copy_state_dict(text_head_sd)
-            self.echo("Initialize text encoder from `text_head`.")
+            n_o, o_n = self.text_head.copy_state_dict(text_head_sd)
+            msg = f" except {n_o}" if len(n_o) > 0 else ""
+            self.echo(f"Initialize text encoder from `text_head`{msg}.")
+        if len(self.text_head.state_dict()) == 0:
+            self.text_head = None
+            self.echo("Destory text encoder.")
 
         self.loss_head = build_loss_head(self.cfg.model.loss, **kwargs)
 
@@ -232,11 +225,11 @@ class CVALPDP(nn.Module):
             })
         else:
             self.echo("Freeze audio encoder.")
-        if not self.cfg.model.text.freeze:
+        if not self.cfg.model.text.freeze and self.text_head is not None:
             tunable_params.update({
                 f"text_head.{k}": v for k, v in self.text_head.named_parameters()
             })
-        else:
+        elif self.text_head is not None:
             self.echo("Freeze text encoder.")
         return tunable_params
 

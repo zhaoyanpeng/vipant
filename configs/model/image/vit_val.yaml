@@ -12,7 +12,7 @@ encoder:
 pre_encoder:
     name: ViTPreEncoder
     patch_size: 32 
-    stride: 32
+    stride: ${model.image.pre_encoder.patch_size}
     in_channels: 3 
 post_encoder:
     name: ViTPostEncoder

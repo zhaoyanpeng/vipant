@@ -9,8 +9,6 @@ import torch.nn.functional as F
 from clip import Bottleneck 
 from clip import QuickGELU, LayerNorm
 
-from . import Transformer
-
 ENCODER_MODULES_REGISTRY = Registry("ENCODER_MODULES")
 ENCODER_MODULES_REGISTRY.__doc__ = """
 Registry for encoder modules.
@@ -32,7 +30,7 @@ class MetaEncoder(nn.Module):
     def hp(self, hp):
         pass 
 
-class Miscellanea(nn.Module):
+class Miscellanea(MetaEncoder):
     """ a parameter container.  
     """
     def __init__(self, cfg, position_resolution=None, **kwargs):
@@ -48,6 +46,9 @@ class Miscellanea(nn.Module):
         self.positional_embedding = nn.Parameter(scale * torch.randn(positions, width))
         self.class_embedding = nn.Parameter(scale * torch.randn(width)) #None # `<s>` as the class 
 
+    def initialize_parameters(self):
+        pass
+
 @ENCODER_MODULES_REGISTRY.register()
 class AddonEncoder(nn.Module):
     """ enhance an existing encoder.
@@ -62,22 +63,28 @@ class AddonEncoder(nn.Module):
 class CLIPMisc(Miscellanea):
     """ a parameter container.  
     """
-    def __init__(self, cfg, position_resolution=None, reference=None, **kwargs):
+    def __init__(self, cfg, position_resolution=None, **kwargs):
         super().__init__(cfg, position_resolution=position_resolution, **kwargs)
-        if reference is not None:
-            self.positional_embedding = reference.positional_embedding 
-            self.class_embedding = reference.class_embedding 
-        self.initialize_parameters()
-
-    def initialize_parameters(self):
         pass
+
+    def replace_modules(self, reference, keep_hp=False):
+        self.positional_embedding, self.class_embedding = reference.positional_embedding, reference.class_embedding
+        if not keep_hp:
+            self.position_resolution = reference.position_resolution
+
+    @property
+    def hp(self):
+        return [self.position_resolution]
+
+    @hp.setter
+    def hp(self, hp):
+        (self.position_resolution,) = hp
 
     @property
     def pos_embedding(self):
-        #print(f"{self.positional_embedding.shape} {self.position_resolution}")
-        return interp_clip_vp_embedding(
-            self.positional_embedding, self.position_resolution
-        )
+        positional_embedding = interp_clip_vp_embedding(self.positional_embedding, self.position_resolution)
+        #print(f"{self.positional_embedding.shape} {self.position_resolution} {positional_embedding.shape}")
+        return positional_embedding
 
     @property
     def cls_embedding(self):
@@ -149,18 +156,28 @@ def _vit_position_resolution(input_resolution, patch_size, stride):
         position_resolution = (nrow, ncol)
     return stride, positions, position_resolution
 
-def _interpolate_conv_weight(weight, input_shape): 
-    conv1_weight = weight
-    size = (conv1_weight.shape[0], input_shape[1]) 
-    conv1_weight = conv1_weight.permute(2, 3, 0, 1)
-    conv1_weight = F.interpolate(
-        weight,
-        size,
-        mode="bilinear",
-        align_corners=False,
-    )
-    conv1_weight = conv1_weight.permute(2, 3, 0, 1)
-    return conv1_weight
+def interp_conv_weight_channel(conv_weight, input_shape):
+    if conv_weight.shape[1] != input_shape[1]:
+        input_shape = (conv_weight.shape[0], input_shape[1])
+        conv_weight = conv_weight.permute(2, 3, 0, 1)
+        conv_weight = F.interpolate(
+            conv_weight,
+            input_shape,
+            mode="bilinear",
+            align_corners=False,
+        )
+        conv_weight = conv_weight.permute(2, 3, 0, 1)
+    return conv_weight
+
+def interp_conv_weight_spatial(conv_weight, patch_shape):
+    if conv_weight.shape[-2:] != patch_shape:
+        conv_weight = F.interpolate(
+            conv_weight,
+            patch_shape,
+            mode="bilinear",
+            align_corners=False,
+        )
+    return conv_weight
 
 @ENCODER_MODULES_REGISTRY.register()
 class ViTPreEncoder(MetaEncoder):
@@ -173,6 +190,7 @@ class ViTPreEncoder(MetaEncoder):
         self.conv1 = nn.Conv2d(
             in_channels=cfg.in_channels, out_channels=width, kernel_size=cfg.patch_size, stride=self.stride, bias=False
         )
+        self.patch_size = self.conv1.weight.shape[-2:]
         self.ln = LayerNorm(width)
         self.initialize_parameters()
 
@@ -182,15 +200,16 @@ class ViTPreEncoder(MetaEncoder):
     def replace_modules(self, reference, keep_hp=False):
         self.conv1, self.ln = reference.conv1, reference.ln
         if not keep_hp:
-            self.stride, self.position_resolution = reference.stride, reference.position_resolution
+            self.stride, self.patch_size, self.position_resolution = \
+                reference.stride, reference.patch_size, reference.position_resolution
 
     @property
     def hp(self):
-        return [self.stride, self.position_resolution] 
+        return [self.stride, self.patch_size, self.position_resolution]
 
     @hp.setter
     def hp(self, hp):
-        (self.stride, self.position_resolution) = hp 
+        (self.stride, self.patch_size, self.position_resolution) = hp
 
     @property
     def dtype(self):
@@ -206,15 +225,18 @@ class ViTPreEncoder(MetaEncoder):
         x = x.type(self.dtype)
         if x.shape[1] != 3: # interpolate weight
             use_mean = True
+            conv1_weight = interp_conv_weight_spatial(self.conv1.weight, self.patch_size)
+            #print(f"{self.conv1.weight.shape}, {conv1_weight.shape}, {self.patch_size}, {self.conv1.stride}, {self.stride}")
             conv1_weight = (
-                self.conv1.weight.mean(1, keepdim=True) if use_mean else
-                _interpolate_conv_weight(self.conv1.weight, x.shape)
+                conv1_weight.mean(1, keepdim=True) if use_mean else
+                interp_conv_weight_channel(conv1_weight, x.shape)
             )
             x = F.conv2d(
                 x, conv1_weight, bias=self.conv1.bias, stride=self.stride
             )
         else:
             x = self.conv1(x)  # shape = [*, width, grid, grid]
+            #print(f"{self.conv1.weight.shape}, {self.patch_size}, {self.conv1.stride}, {self.stride}")
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([
@@ -299,7 +321,7 @@ class ResNetPreEncoder(MetaEncoder):
             use_mean = True
             conv1_weight = (
                 self.conv1.weight.mean(1, keepdim=True) if use_mean else
-                _interpolate_conv_weight(self.conv1.weight, x.shape)
+                interp_conv_weight_channel(self.conv1.weight, x.shape)
             )
             x = F.conv2d(
                 x, conv1_weight, bias=self.conv1.bias, stride=self.conv1.stride, padding=self.conv1.padding
@@ -479,27 +501,26 @@ class ResidualAttentionBlock(nn.Module):
         x = x + self.mlp(self.ln_2(x))
         return x
 
-def interp_clip_vp_embedding(old_pos_emb, pos_resolution):
-    """ `vp` stands for `visual positional`
+def interp_clip_vp_embedding(old_pos_emb, pos_resolution, bop=1):
+    """ vp: stands for `visual positional`
+        bop: start position of the postional embeddings
         old_pos_emb: (H x W + 1, D)
     """
-    num_pos, pos_dim = old_pos_emb.shape[:2]
-    num_pos_required = np.prod(pos_resolution)
-    if num_pos_required + 1 <= num_pos:
-        new_pos_emb = old_pos_emb[:num_pos_required + 1]
-    else:
-        num_pos = int(np.sqrt(num_pos - 1))
-        ptensor = old_pos_emb[1:].reshape(
-            -1, num_pos, num_pos, pos_dim
-        ).permute(0, 3, 1, 2) 
+    num_pos, pos_dim = old_pos_emb.shape[-2:]
+    num_pos = int(np.sqrt(num_pos - bop))
+    ptensor = old_pos_emb[bop:].reshape(
+        -1, num_pos, num_pos, pos_dim
+    ).permute(0, 3, 1, 2)
+    if ptensor.shape[-2:] != pos_resolution:
         new_pos_emb = F.interpolate(
             ptensor,
             pos_resolution,
             mode="bilinear",
             align_corners=False,
-        ).permute(0, 2, 3, 1).flatten(1, 2) 
+        ).permute(0, 2, 3, 1).flatten(1, 2)
         new_pos_emb = torch.cat((
-            old_pos_emb[:1], new_pos_emb.view(-1, pos_dim)
+            old_pos_emb[:bop], new_pos_emb.view(-1, pos_dim)
         ), dim=0)
+    else: # do nothing
+        new_pos_emb = old_pos_emb
     return new_pos_emb
-
