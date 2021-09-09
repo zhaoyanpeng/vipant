@@ -19,7 +19,9 @@ import torch.nn.functional as F
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
 )
+from .ast import ASTSrc
 from .audioset_cap import AudioCapDatasetSrc
+from .audioset_ast import AudiosetDatasetNpz, ImageAudioCollator
 from clip import tokenize
 
 ###
@@ -27,203 +29,6 @@ from clip import tokenize
 # we now have clf-focused loader in ast.py and audioset_ast.py
 # and contrastive-focused loader in image_audio.py and this file.
 ###
-
-class AudiosetDatasetNpz(data.Dataset):
-    """ `__getitem__' loads .npz from disk.
-    """
-    def __init__(self, cfg, data_name, train, label_map):
-        data_path = f"{cfg.data_root}/{data_name}.csv"
-        assert os.path.isfile(data_path), f"{data_path} is not a file."
-        self.label_map = label_map
-        self.num_label = len(label_map)
-        self.dataset = list()
-        with open(data_path, "r") as fr:
-            for iline, line in enumerate(fr):
-                record = json.loads(line)
-                self.dataset.append(record) 
-                if not train and iline + 1 == cfg.eval_samples:
-                    break
-        self.length = len(self.dataset)
-        self.train = train
-        self.cfg = cfg
-
-        self.transform_audio, self.transform_fbank = make_transform(cfg.audio)
-
-    def _shuffle(self):
-        pass
-
-    def __getitem__(self, index):
-        name = self.dataset[index]["id"] 
-        aclip = self.dataset[index]["aclip"] 
-        frame = self.dataset[index]["frame"]
-        categories = self.dataset[index]["labels"]
-
-        aclip_file = f"{self.cfg.data_root}/{aclip}"
-        frame_file = f"{self.cfg.data_root}/{frame}"
-
-        images = np.load(frame_file)
-        images = [images[key] for key in images.files if len(images[key]) != 0]
-        assert len(images) != 0, f"no frame exist: |images| = {len(images)}"
-        if self.train:
-            idx = np.random.choice(len(images), 1)[0]
-            ict = np.random.choice(len(categories), 1)[0]
-        else:
-            idx = int(np.ceil(len(images) / 2)) - 1
-            ict = 0 # 1st label
-        image = images[idx] 
-
-        max_audio_len = self.cfg.max_audio_len
-        audio = np.load(aclip_file)["flag"] # (..., time, freq): `flag' is used as the key accidentally
-
-        if self.train and self.transform_fbank is not None:
-            audio = self.transform_fbank(audio)
-
-        npad = max_audio_len - audio.shape[0]
-        if npad > 0:
-            audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
-        
-        image = image[None]
-        audio = audio[None]
-        
-        if not self.cfg.clf: 
-            category = categories[ict]
-            label, _, text_int = self.label_map[category] 
-        else: # classification task
-            label_set = set([self.label_map[category][0] for category in categories])
-            label = [1 if i in label_set else 0 for i in range(self.num_label)] 
-            text_int = [0] # TODO concatenate all text pieces
-
-        item = {"image": image, "audio": audio, "text": text_int, "label": label, "name": name}
-        return item 
-
-    def __len__(self):
-        return self.length
-
-class AudiosetDatasetSrc(data.Dataset):
-    """ `__getitem__' loads raw file from disk.
-    """
-    def __init__(self, cfg, data_name, train, label_map):
-        data_path = f"{cfg.data_root}/{data_name}.csv"
-        assert os.path.isfile(data_path), f"{data_path} is not a file."
-        self.label_map = label_map
-        self.num_label = len(label_map)
-        self.dataset = list()
-        with open(data_path, "r") as fr:
-            for iline, line in enumerate(fr):
-                record = json.loads(line)
-                self.dataset.append(record) 
-                if not train and iline + 1 == cfg.eval_samples:
-                    break
-        self.length = len(self.dataset)
-        self.train = train
-        self.cfg = cfg
-        
-        acfg = cfg.audio
-        self.transform_audio, self.transform_fbank = make_transform(acfg)        
-        self.kaldi_params = {
-            "use_log_fbank": acfg.use_log_fbank,
-            "frame_length": acfg.frame_length,
-            "frame_shift": acfg.frame_shift,
-            "window_type": acfg.window_type,
-            "num_mel_bins": acfg.num_mel_bins,
-            "high_freq": acfg.high_freq,
-            "low_freq": acfg.low_freq,
-        }
-
-    def _shuffle(self):
-        pass
-
-    def __getitem__(self, index):
-        akey = "aclip"
-        fkey = "frame_224"
-        dir = self.dataset[index]["dir"] 
-        name = self.dataset[index]["id"] 
-        aclip = self.dataset[index][akey][0] 
-        frame = self.dataset[index][fkey]
-        categories = self.dataset[index]["labels"]
-
-        aclip_file = f"{self.cfg.data_root}/{dir}/{akey}/{name}.{aclip}"
-        frame_file = f"{self.cfg.data_root}/{dir}/{fkey}/{name}.{frame}"
-
-        images = np.load(frame_file)
-        images = [images[key] for key in images.files if len(images[key]) != 0]
-        assert len(images) != 0, f"no frame exist: |images| = {len(images)}"
-        if self.train:
-            idx = np.random.choice(len(images), 1)[0]
-            ict = np.random.choice(len(categories), 1)[0]
-        else:
-            idx = int(np.ceil(len(images) / 2)) - 1
-            ict = 0 # 1st label
-        image = images[idx] 
-        
-        max_audio_len = self.cfg.max_audio_len
-        audio = _extract_kaldi_spectrogram(
-            aclip_file, 
-            self.kaldi_params, 
-            train=self.train,
-            max_audio_len=max_audio_len,
-            transform_audio=(self.transform_audio if self.train else None)
-        ) # (..., time, freq)
-        
-        if self.train and self.transform_fbank is not None:
-            audio = self.transform_fbank(audio)
-
-        npad = max_audio_len - audio.shape[0]
-        if npad > 0:
-            audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
-        
-        image = image[None]
-        audio = audio[None]
-
-        if not self.cfg.clf: 
-            category = categories[ict]
-            label, _, text_int = self.label_map[category] 
-        else: # classification task
-            label_set = set([self.label_map[category][0] for category in categories])
-            label = [1 if i in label_set else 0 for i in range(self.num_label)] 
-            text_int = [0] # TODO concatenate all text pieces
-
-        item = {"image": image, "audio": audio, "text": text_int, "label": label, "name": name}
-        return item 
-
-    def __len__(self):
-        return self.length
-
-class ImageAudioCollator:
-    def __init__(self, device=torch.device("cpu")):
-        # RuntimeError: cannot pin 'torch.cuda.FloatTensor' only dense CPU tensors can be pinned
-        # when pin_memory is true, the collator has to return CPU tensors
-        self.device = device
-
-    def __call__(self, records):
-        union = { 
-            k: [record.get(k) for record in records] for k in set().union(*records) 
-        } 
-        name = union["name"] 
-        label = union["label"]
-        text_list = union["text"]
-        if isinstance(text_list[0][0], int): # train
-            label = np.array(label)
-            pass 
-            """ https://stackoverflow.com/a/43149308
-            lengths = [len(x) for x in text_list]
-            max_len = max(lengths)
-            text = np.zeros((len(text_list), max_len), int)
-            mask = np.arange(max_len) < np.array(lengths)[:, None]
-            text[mask] = np.concatenate(text_list)
-            """
-        elif isinstance(text_list[0][0], list): # test
-            text_list = list(itertools.chain.from_iterable(text_list))
-            #name = list(itertools.chain.from_iterable(name))
-        else:
-            raise ValueError(f"unrecognized `{type(text_list[0][0])}`")
-        # https://stackoverflow.com/a/38619333
-        text = np.array(list(itertools.zip_longest(*text_list, fillvalue=0))).T
-        return (
-            np.concatenate(union["image"], axis=0), 
-            np.concatenate(union["audio"], axis=0),
-            text, label, name,
-        )
 
 def collect_ytid(csv_root, csv_list):
     ids = defaultdict(list)
@@ -275,9 +80,12 @@ def build_audioset_dataloader(cfg, data_name, label_map, shuffle=True, train=Tru
     ddp_mode = torch.distributed.is_initialized()
     rcfg = cfg.running
     if data_name.startswith("src"):
-        dataset = AudiosetDatasetSrc(rcfg, data_name, train, label_map)
+        if not rcfg.force_npz:
+            dataset = ASTSrc(rcfg, data_name, train, label_map, False)
+        else:
+            dataset = ASTNpz(rcfg, data_name, train, label_map, False)
     elif data_name.startswith("npz"):
-        dataset = AudiosetDatasetNpz(rcfg, data_name, train, label_map)
+        dataset = AudiosetDatasetNpz(rcfg, data_name, train, label_map, False)
     elif data_name.startswith("audiocaps"): # audio captioning
         dataset = AudioCapDatasetSrc(rcfg, data_name, train, label_map)
     else:
