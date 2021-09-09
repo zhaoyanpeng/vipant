@@ -50,21 +50,32 @@ class ImageAudioDatasetSrc(data.Dataset):
             self.dataset.append(record) 
             if not train and iline + 1 == cfg.eval_samples:
                 break
+        self.audio_norms = cfg.audio.norms
         self.length = len(self.dataset)
         self.train = train
         self.cfg = cfg
         
         acfg = cfg.audio
         self.transform_audio, self.transform_fbank = make_transform(acfg)        
-        self.kaldi_params = {
-            "use_log_fbank": acfg.use_log_fbank,
-            "frame_length": acfg.frame_length,
-            "frame_shift": acfg.frame_shift,
-            "window_type": acfg.window_type,
-            "num_mel_bins": acfg.num_mel_bins,
-            "high_freq": acfg.high_freq,
-            "low_freq": acfg.low_freq,
-        }
+        if not self.cfg.audio.zero_mean_wf:
+            self.kaldi_params = {
+                "use_log_fbank": acfg.use_log_fbank,
+                "frame_length": acfg.frame_length,
+                "frame_shift": acfg.frame_shift,
+                "window_type": acfg.window_type,
+                "num_mel_bins": acfg.num_mel_bins,
+                "high_freq": acfg.high_freq,
+                "low_freq": acfg.low_freq,
+            } # old configs
+        else:
+            self.kaldi_params = {
+                "htk_compat": True,
+                "use_energy": False,
+                "window_type": 'hanning',
+                "num_mel_bins": acfg.num_mel_bins,
+                "dither": 0.0,
+                "frame_shift": 10
+            } # new configs
 
     def _shuffle(self):
         pass
@@ -78,20 +89,28 @@ class ImageAudioDatasetSrc(data.Dataset):
 
         max_audio_len = self.cfg.max_audio_len
         audio = _extract_kaldi_spectrogram(
-            aclip_file, 
-            self.kaldi_params, 
+            aclip_file,
+            self.kaldi_params,
             train=self.train,
             max_audio_len=max_audio_len,
-            transform_audio=(self.transform_audio if self.train else None)
+            zero_mean_wf=self.cfg.audio.zero_mean_wf,
+            transform_audio=(
+                self.transform_audio if self.train and not self.cfg.audio.eval_norms else None
+            )
         ) # (..., time, freq)
         
-        if self.train and self.transform_fbank is not None:
-            audio = self.transform_fbank(audio)
-
         npad =  self.cfg.max_audio_len - audio.shape[0]
         if npad > 0: # always pad to the right
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
+
+        if not self.cfg.audio.eval_norms and len(self.audio_norms) == 2:
+            mean, std = self.audio_norms
+            audio = (audio - mean) / std
         
+        #if self.train and self.transform_fbank is not None:
+        if not self.cfg.audio.eval_norms and self.train and self.transform_fbank is not None:
+            audio = self.transform_fbank(audio)
+
         audio = audio[None]
 
         item = {"audio": audio, "label_int": label_int, "label_str": label_str}

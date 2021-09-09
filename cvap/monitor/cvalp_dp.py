@@ -236,7 +236,7 @@ class Monitor(object):
         return model.report(gold_file=self.gold_file)
 
     def save(self):
-        fsave = f"{self.cfg.model_root}/{self.cfg.model_name}/{self.total_step:08d}.pth"
+        fsave = f"{self.cfg.alias_root}/{self.cfg.model_name}/{self.total_step:08d}.pth"
         self.echo(f"Saving the checkpoint to {fsave}")
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
         checkpoint = {

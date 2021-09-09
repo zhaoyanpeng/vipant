@@ -100,8 +100,11 @@ class AudioClassifier(nn.Module):
             local_cfg, audio_head_sd, loss_head_sd = load_checkpoint()
             from_scratch, _, text_head_sd, _ = load_clip(local_cfg) 
             
-            self.audio_head = build_audio_head(local_cfg.model.audio)
-            self.audio_head.load_state_dict(audio_head_sd)
+            self.audio_head = build_audio_head(self.cfg.model.audio)
+            #self.audio_head.load_state_dict(audio_head_sd)
+            n_o, o_n = self.audio_head.from_pretrained(audio_head_sd, local_cfg)
+            msg = f" except {n_o}" if len(n_o) > 0 else ""
+            self.echo(f"Initialize audio encoder from `audio_head`{msg}.")
 
             self.text_head = build_text_head(self.cfg.model.text) #
             self.text_head.copy_state_dict(text_head_sd)

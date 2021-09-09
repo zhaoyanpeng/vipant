@@ -10,6 +10,7 @@ num_mel_bins: 128
 low_freq: 0.0
 high_freq: 8000
 use_log_fbank: True
+zero_mean_wf: False
 # transform of audios 
 transform_audio: False
 audio_transforms:
