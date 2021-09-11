@@ -251,6 +251,7 @@ class CELossHead(LossHead):
             nn.Parameter(torch.ones([]) * np.log(1 / 0.07)) if cfg.scaling else
             torch.ones([], requires_grad=False) * np.log(1 / 1)
         )
+        self.scale_max = cfg.scale_max or float("inf")
         self.loss_fn = nn.CrossEntropyLoss()
         self.reduce = False 
     
@@ -271,7 +272,7 @@ class CELossHead(LossHead):
             x2 = x2 / x2.norm(dim=-1, keepdim=True)
         #print(f"{threading.current_thread().ident} loss --{kwargs.get('normalized', False)}")
         # cosine similarity as logits
-        logit_scale = self.logit_scale.exp()
+        logit_scale = self.logit_scale.exp().clamp(max=self.scale_max)
         logits_per_x1 = logit_scale * x1 @ x2.t()
         logits_per_x2 = logit_scale * x2 @ x1.t()
         # cross entropy loss 

@@ -507,6 +507,13 @@ def interp_clip_vp_embedding(old_pos_emb, pos_resolution, bop=1):
         old_pos_emb: (H x W + 1, D)
     """
     num_pos, pos_dim = old_pos_emb.shape[-2:]
+    num_pos_required = np.prod(pos_resolution)
+    # TODO assumed old_pos_emb comes from vision pos, but it can come from audio pos
+    # if these two kinds do not share, we do not need to interp the input pos.
+    # FIXME adhoc: the condition of not sharing may be wrong.
+    if num_pos_required + 1 == num_pos:
+        return old_pos_emb
+    # old_pos_emb must be vision pos if sharing pos between vision and audio
     num_pos = int(np.sqrt(num_pos - bop))
     ptensor = old_pos_emb[bop:].reshape(
         -1, num_pos, num_pos, pos_dim

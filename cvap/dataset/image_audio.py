@@ -161,13 +161,25 @@ class ImageAudioDatasetSrc(data.Dataset):
 
         sub_dir = "" if len(sub_dir) == 0 else f"{sub_dir}/"
         aclip_file = f"{self.cfg.data_root}/{sub_dir}{akey}/{name}.{aclip}"
+
+        frame_emb_file = None
         if isinstance(frame, str):
             frame_file = f"{self.cfg.data_root}/{sub_dir}{fkey}/{name}.{frame}"
         else:
             idx = np.random.choice(len(images), 1)[0] if self.train else int(np.ceil(len(images) / 2)) - 1
             frame_file = f"{self.cfg.data_root}/{sub_dir}{fkey}/{name}.{images[idx]}"
+            if self.cfg.frame_emb is not None:
+                frame_emb_file = f"{self.cfg.data_root}/{self.cfg.frame_emb}/{name}.{images[idx].rsplit('.', 1)[0]}.npz"
 
-        return name, aclip_file, frame_file
+        return name, aclip_file, frame_file, frame_emb_file
+
+    def _image2emb(self, fname):
+        try:
+            image = np.load(fname)["v"]
+        except Exception as e:
+            image = np.random.rand(self.cfg.embed_dim).astype("float32")
+            warnings.warn(f"use random image instead because `{e}` {fname}.")
+        return image
 
     def _image2numpy(self, fname):
         if fname is not None:
@@ -218,9 +230,10 @@ class ImageAudioDatasetSrc(data.Dataset):
         return audio
 
     def __getitem__(self, index):
-        name, aclip_file, frame_file = self._process_item(index)
+        name, aclip_file, frame_file, frame_emb_file = self._process_item(index)
 
-        image = self._image2numpy(frame_file)
+        # higher priority for pre-computed frame embeddings
+        image = self._image2emb(frame_emb_file) if frame_emb_file is not None else self._image2numpy(frame_file)
         audio = self._audio2numpy(aclip_file)
 
         image = image[None]

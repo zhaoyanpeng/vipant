@@ -40,6 +40,10 @@ class CVALPDP(nn.Module):
             image_features = data_parallel(
                 self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
             )
+        elif images is not None: # pre-computed unnormalized features
+            if self.loss_head.normalized:
+                images = images / images.norm(dim=-1, keepdim=True)
+            image_features = images
         if audios is not None and self.audio_head is not None:
             audio_features = data_parallel(
                 self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
@@ -74,7 +78,7 @@ class CVALPDP(nn.Module):
 
     def collect_state_dict(self):
         return (
-            self.image_head.state_dict(),
+            self.image_head.state_dict() if self.image_head is not None else OrderedDict(),
             self.audio_head.state_dict(),
             self.text_head.state_dict() if self.text_head is not None else OrderedDict(),
             self.loss_head.state_dict(),
@@ -123,6 +127,9 @@ class CVALPDP(nn.Module):
             n_o, o_n = self.image_head.copy_state_dict(image_head_sd)
             msg = f" except {n_o}" if len(n_o) > 0 else ""
             self.echo(f"Initialize image encoder from `image_head`{msg}.")
+        if self.cfg.running.frame_emb is not None:
+            self.image_head = None
+            self.echo("Destory image encoder.")
         scfg = self.cfg.running.siamese
 
         # shared modules with audio_head
@@ -157,11 +164,11 @@ class CVALPDP(nn.Module):
         tunable_params = {
             f"loss_head.{k}": v for k, v in self.loss_head.named_parameters()
         } 
-        if not self.cfg.model.image.freeze:
+        if not self.cfg.model.image.freeze and self.image_head is not None:
             tunable_params.update({
                 f"image_head.{k}": v for k, v in self.image_head.named_parameters()
             })
-        else:
+        elif self.image_head is not None:
             shared_modules = amodules | lmodules
             pattern = "|".join([f"^{m}\." for m in shared_modules])
             tunable_params.update({
@@ -192,6 +199,9 @@ class CVALPDP(nn.Module):
             n_o, o_n = self.image_head.copy_state_dict(image_head_sd)
             msg = f" except {n_o}" if len(n_o) > 0 else ""
             self.echo(f"Initialize image encoder from `image_head`{msg}.")
+        if self.cfg.running.frame_emb is not None:
+            self.image_head = None
+            self.echo("Destory image encoder.")
 
         self.audio_head = build_audio_head(self.cfg.model.audio)
         if not from_scratch and not self.cfg.model.audio.from_scratch:
@@ -213,11 +223,11 @@ class CVALPDP(nn.Module):
         tunable_params = {
             f"loss_head.{k}": v for k, v in self.loss_head.named_parameters()
         } 
-        if not self.cfg.model.image.freeze:
+        if not self.cfg.model.image.freeze and self.image_head is not None:
             tunable_params.update({
                 f"image_head.{k}": v for k, v in self.image_head.named_parameters()
             })
-        else:
+        elif self.image_head is not None:
             self.echo("Freeze image encoder.")
         if not self.cfg.model.audio.freeze:
             tunable_params.update({

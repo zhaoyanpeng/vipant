@@ -25,9 +25,14 @@ class CVAPDP(nn.Module):
         device_ids = kwargs.get("device_ids", [0])
         # how to asynchronize the two `data_parallel` 
         kwargs = {"normalized": self.loss_head.normalized, "names": kwargs.get("names", None)}
-        image_features = data_parallel(
-            self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
-        )
+        if self.image_head is not None:
+            image_features = data_parallel(
+                self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
+            )
+        else: # pre-computed unnormalized features
+            if self.loss_head.normalized:
+                images = images / images.norm(dim=-1, keepdim=True)
+            image_features = images
         audio_features = data_parallel(
             self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
         )
@@ -80,6 +85,9 @@ class CVAPDP(nn.Module):
             if not from_scratch and not self.cfg.model.image.from_scratch:
                 self.image_head.copy_state_dict(image_head_sd)
                 self.echo("Initialize image encoder from `image_head`.")
+            if self.cfg.running.frame_emb is not None:
+                self.image_head = None
+                self.echo("Destory image encoder.")
 
             self.audio_head = build_audio_head(self.cfg.model.audio)
             if not self.cfg.model.audio.from_scratch:
@@ -109,11 +117,11 @@ class CVAPDP(nn.Module):
             tunable_params.update({
                 f"loss_head.{k}": v for k, v in self.loss_head.named_parameters()
             })
-            if not self.cfg.model.image.freeze:
+            if not self.cfg.model.image.freeze and self.image_head is not None:
                 tunable_params.update({
                     f"image_head.{k}": v for k, v in self.image_head.named_parameters()
                 })
-            else:
+            elif self.image_head is not None:
                 self.echo("Freeze image encoder.")
             self.cuda(self.cfg.rank)
         return tunable_params

@@ -109,7 +109,7 @@ class Monitor(object):
     def make_batch(self, batch):
         images = torch.tensor(batch[0], device=self.device) # (c, h, w)
         audios = torch.tensor(batch[1], device=self.device).unsqueeze(1)
-        if images.shape[-1] != self.cfg.running.resolution:
+        if images.dim() != 2 and images.shape[-1] != self.cfg.running.resolution:
             images = F.interpolate(
                 images,
                 self.cfg.running.resolution,
@@ -157,18 +157,22 @@ class Monitor(object):
         self.timeit(all_time)        
         device_ids = [i for i in range(self.cfg.num_gpus)]
         nchunk = dist.get_world_size() if torch.distributed.is_initialized() else 1  
-        warmup_step_rate = self.cfg.optimizer.warmup_steps // 20
+        warmup_step_rate = max(self.cfg.optimizer.warmup_steps // 20, 1)
         for step, batch in enumerate(self.dataloader, start=iepoch * len(self.dataloader)):
             images, audios, _ = self.make_batch(batch)
             self.timeit(all_time, key="data")
 
             if self.cfg.optimizer.use_lars:
                 adjust_learning_rate(self.cfg.optimizer, self.optimizer, self.dataloader, step)
-            if self.cfg.optimizer.warmup and self.total_step <= self.cfg.optimizer.warmup_steps and self.total_step % warmup_step_rate == 0:
-                lr = ((self.total_step + 0) / self.cfg.optimizer.warmup_steps) * self.cfg.optimizer.lr
+            warmup = not self.cfg.optimizer.use_lars and self.cfg.optimizer.warmup and \
+                self.total_step <= self.cfg.optimizer.warmup_steps
+            if warmup and self.total_step % warmup_step_rate == 0:
+                lrs = []
+                ratio = ((self.total_step + 0) / self.cfg.optimizer.warmup_steps) # * self.cfg.optimizer.lr
                 for param_group in self.optimizer.param_groups:
-                    param_group['lr'] = lr
-                self.echo(f"warmup lr: {lr:.2e}")
+                    param_group['lr'] = ratio * param_group["initial_lr"]
+                    lrs.append(f"{param_group['lr']:.2e}")
+                self.echo(f"warmup lr: {' '.join(lrs)}")
 
             self.optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast():
@@ -176,6 +180,9 @@ class Monitor(object):
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
+
+            if not self.cfg.optimizer.use_lars and self.cfg.optimizer.batch_sch and not warmup:
+                self.scheduler.step() # after all warmup is completed
 
             self.timeit(all_time, key="model")
 
@@ -217,7 +224,7 @@ class Monitor(object):
                     self.save()
             self.timeit(all_time, key="report")
 
-        if not self.cfg.optimizer.use_lars:
+        if not self.cfg.optimizer.use_lars and not self.cfg.optimizer.batch_sch:
             self.scheduler.step()
         self.timeit(all_time, show=True)
         
@@ -286,14 +293,10 @@ class Monitor(object):
                 lars_adaptation_filter=exclude_bias_or_norm,
             )
         else:
-            self.optimizer = torch.optim.Adam(
-                param_groups, self.cfg.optimizer.lr, weight_decay=5e-7, betas=(0.95, 0.999)
-            )
-            steps = list(self.cfg.optimizer.steps)
-            steps = [self.cfg.optimizer.epochs] if len(steps) == 0 else steps
-            self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
-                self.optimizer, steps, gamma=0.5
-            )
+            ocfg = self.cfg.optimizer.optimizer
+            scfg = self.cfg.optimizer.scheduler
+            self.optimizer = getattr(torch.optim, ocfg[0])(param_groups, **ocfg[1])
+            self.scheduler = getattr(torch.optim.lr_scheduler, scfg[0])(self.optimizer, **scfg[1])
         if not self.cfg.verbose:
             return
         self.echo(f"Gradienting The Following Parameters:")

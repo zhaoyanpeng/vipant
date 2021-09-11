@@ -1,3 +1,4 @@
 name: 'CELossHead'
 layers: []
 scaling: True
+scale_max: null

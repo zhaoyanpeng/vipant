@@ -43,6 +43,9 @@ def numel(model: torch.nn.Module, trainable: bool = False):
     unique = {p.data_ptr(): p for p in parameters}.values()
     return sum(p.numel() for p in unique) 
 
+def detect_nan(x):
+    return torch.isnan(x).any(), torch.isinf(x).any()
+
 class AverageMeter(object):
     def __init__(self):
         self.reset()

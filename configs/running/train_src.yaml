@@ -13,6 +13,8 @@ batch_size: 432 #108 #216 #
 epochs: 1000 
 save_epoch: False 
 frame_key: "frame"
+frame_emb: null
+embed_dim: ${model.image.embed_dim}
 # vision backbone
 resolution: ${model.image.resolution}
 # audio backbone

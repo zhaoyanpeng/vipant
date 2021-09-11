@@ -1,12 +1,16 @@
-use_lars: True 
+use_lars: True
 name: Adam
 warmup: True
 warmup_steps: 1000
-lr: 0.00001
-weight_decay: 1e-6
+lr: 5e-4
+weight_decay: 2e-1
+betas: [0.9, 0.999]
 max_norm: 0.5 
 lr_weight: 0.2
 lr_bias: 0.0048
-batch_size: ${running.batch_size} 
-epochs: ${running.epochs} 
-steps: [] 
+batch_size: ${running.batch_size}
+epochs: ${running.epochs}
+steps: []
+batch_sch: False # schedule lr per batch
+optimizer: [Adam, {lr: '${optimizer.lr}', betas: '${optimizer.betas}', weight_decay: '${optimizer.weight_decay}'}]
+scheduler: [MultiStepLR, {milestones: '${optimizer.steps}', gamma: 0.5}]
