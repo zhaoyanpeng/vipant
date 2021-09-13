@@ -12,6 +12,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 
 from ..util import numel
 from ..model import build_main_model
@@ -164,14 +165,18 @@ class Monitor(object):
 
             if self.cfg.optimizer.use_lars:
                 adjust_learning_rate(self.cfg.optimizer, self.optimizer, self.dataloader, step)
+
+            inc = 0
+            force_eval = False # recommended by SGDR
             warmup = not self.cfg.optimizer.use_lars and self.cfg.optimizer.warmup and \
-                self.total_step <= self.cfg.optimizer.warmup_steps
-            if warmup and self.total_step % warmup_step_rate == 0:
-                lrs = []
-                ratio = ((self.total_step + 0) / self.cfg.optimizer.warmup_steps) # * self.cfg.optimizer.lr
+                (self.total_step + inc) <= self.cfg.optimizer.warmup_steps
+            if warmup and (self.total_step + inc) % warmup_step_rate == 0:
+                ratio = ((self.total_step + inc) / self.cfg.optimizer.warmup_steps) # * self.cfg.optimizer.lr
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = ratio * param_group["initial_lr"]
-                    lrs.append(f"{param_group['lr']:.2e}")
+                lrs = [param_group['lr'] for param_group in self.optimizer.param_groups]
+                force_eval = lrs == self.scheduler.base_lrs
+                lrs = [f"{lr:.2e}" for lr in lrs]
                 self.echo(f"warmup lr: {' '.join(lrs)}")
 
             self.optimizer.zero_grad(set_to_none=True)
@@ -182,7 +187,11 @@ class Monitor(object):
             self.scaler.update()
 
             if not self.cfg.optimizer.use_lars and self.cfg.optimizer.batch_sch and not warmup:
+                old_lrs = " ".join([f"{x:.2e}" for x in self.scheduler.get_last_lr()])
                 self.scheduler.step() # after all warmup is completed
+                if isinstance(self.scheduler, (CosineAnnealingWarmRestarts,)):
+                    force_eval = self.scheduler.get_last_lr() == self.scheduler.base_lrs
+                #self.echo(f"do step lr {old_lrs}")
 
             self.timeit(all_time, key="model")
 
@@ -195,7 +204,7 @@ class Monitor(object):
             self.total_step += 1
             self.total_loss += loss.detach()
             self.total_inst += images.shape[0] * nchunk
-            if self.cfg.rank == 0 and self.total_step % self.cfg.running.peep_rate == 0:
+            if force_eval or (self.cfg.rank == 0 and self.total_step % self.cfg.running.peep_rate == 0):
                 def grad_norm():
                     return sum(
                         [p.grad.norm(p=2) ** 2 for p in self.params if p.grad is not None]
@@ -207,7 +216,7 @@ class Monitor(object):
                     f"lr_w {lr_w:.2e} lr_b {lr_b:.2e} loss {self.total_loss / self.total_step:.3f} " + 
                     f"{self.total_inst / (time.time() - self.start_time):.2f} samples/s" 
                 )
-            if self.total_step % self.cfg.running.save_rate == 0 or (
+            if force_eval or self.total_step % self.cfg.running.save_rate == 0 or (
                     self.cfg.running.save_epoch and self.total_step % len(self.dataloader) == 0
                 ): # distributed eval
                 report = ""
