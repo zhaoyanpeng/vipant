@@ -43,7 +43,7 @@ def main(cfg, rank, ddp, pg, device, manager):
         output_dir=output_dir, rank=rank, output=output_dir,
     )
     
-    if True or not cfg.eval:
+    if cfg.verbose or not cfg.eval:
         cfg_str = OmegaConf.to_yaml(cfg)
         logger.info(f"\n\n{cfg_str}")
 

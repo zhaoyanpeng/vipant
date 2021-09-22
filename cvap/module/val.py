@@ -143,15 +143,18 @@ def _vit_position_resolution(input_resolution, patch_size, stride):
     if isinstance(stride, int):
         stride = [stride] * 2
     stride = list(stride)
+    if isinstance(patch_size, int):
+        patch_size = [patch_size] * 2
+    patch_size = list(patch_size)
 
     if isinstance(input_resolution, int):
-        nrow = ncol = input_resolution // patch_size
+        nrow = ncol = input_resolution // patch_size[0]
         positions = nrow ** 2 + 1 # 
         position_resolution = (nrow, ncol)
     else:
         row_stride, col_stride = stride[:2]
-        nrow = (input_resolution[0] - patch_size) // row_stride + 1
-        ncol = (input_resolution[1] - patch_size) // col_stride + 1
+        nrow = (input_resolution[0] - patch_size[0]) // row_stride + 1
+        ncol = (input_resolution[1] - patch_size[1]) // col_stride + 1
         positions = nrow * ncol + 1
         position_resolution = (nrow, ncol)
     return stride, positions, position_resolution
@@ -227,10 +230,11 @@ class ViTPreEncoder(MetaEncoder):
             use_mean = True
             conv1_weight = interp_conv_weight_spatial(self.conv1.weight, self.patch_size)
             #print(f"{self.conv1.weight.shape}, {conv1_weight.shape}, {self.patch_size}, {self.conv1.stride}, {self.stride}")
-            conv1_weight = (
-                conv1_weight.mean(1, keepdim=True) if use_mean else
-                interp_conv_weight_channel(conv1_weight, x.shape)
-            )
+            if x.shape[1] != conv1_weight.shape[1]: # channel
+                conv1_weight = (
+                    conv1_weight.mean(1, keepdim=True) if use_mean else
+                    interp_conv_weight_channel(conv1_weight, x.shape)
+                )
             x = F.conv2d(
                 x, conv1_weight, bias=self.conv1.bias, stride=self.stride
             )

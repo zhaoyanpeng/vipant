@@ -54,7 +54,7 @@ class Monitor(object):
         if not self.model.training:
             self.echo("(Zero-shot) Evaluating started...")
             with torch.no_grad():
-                report = self.zero_shot() 
+                report = self.standard_zero_shot() #self.zero_shot()
                 #report = self.infer(self.dataloader, samples=self.cfg.running.eval_samples)
                 self.echo(f"{report}")
                 return None 
@@ -252,6 +252,39 @@ class Monitor(object):
         precisions = np.array(report_by_fold)
         mean, std = precisions.mean(), precisions.std()
         return f"Max mean and std: {mean:2.2f} \\pm {std:2.2f} for zero-shot classification."
+
+    def standard_zero_shot(self, samples=float("inf"), iepoch=0):
+        report_by_fold = list()
+        device_ids = [i for i in range(self.cfg.num_gpus)]
+        text_features = self.model.encode_text(
+            torch.tensor(self.lid2int, device=self.device), device_ids=device_ids
+        )
+        for ifold, (_, evalloader_fn) in enumerate(self.loader_list):
+            _, dataloader = evalloader_fn()
+            nsample, nchunk, nbatch = 0, 1, len(dataloader)
+
+            if isinstance(self.model, DistributedDataParallel):
+                dataloader.sampler.set_epoch(iepoch)
+                nchunk = self.cfg.num_gpus
+
+            start_time = time.time()
+            for ibatch, batch in enumerate(dataloader):
+                if nsample >= samples:
+                    break
+                audios, labels, names = self.make_batch(batch)
+                self.model(audios, labels, device_ids=device_ids, names=names)
+                nsample += audios.shape[0] * nchunk
+            self.echo(f"{ifold:>2}th fold: # sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
+
+        model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
+        report = model.report(text=text_features, label_map=self.label_map)
+        self.echo(f"{report}")
+
+        precision = re.search("=\s(\d+\.\d+)\s\@", report)
+        assert precision is not None, f"invalid report: `{report}`"
+        precision = float(precision.group(1))
+        report_by_fold.append(precision)
+        return f"{precision:2.2f} for zero-shot classification."
 
     def save(self):
         fsave = f"{self.cfg.model_root}/{self.cfg.model_name}/{self.total_step:08d}.pth"

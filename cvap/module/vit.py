@@ -23,17 +23,20 @@ class VisualTransformer(nn.Module):
         stride = stride or patch_size
         if isinstance(stride, int):
             stride = [stride] * 2
+        if isinstance(patch_size, int):
+            patch_size = [patch_size] * 2
         stride = list(stride)
+        patch_size = list(patch_size)
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=width, kernel_size=patch_size, stride=stride, bias=False)
 
         scale = width ** -0.5
         self.class_embedding = nn.Parameter(scale * torch.randn(width))
         if isinstance(input_resolution, int):
-            positions = (input_resolution // patch_size) ** 2 + 1
+            positions = (input_resolution // patch_size[0]) ** 2 + 1
         else:
             row_stride, col_stride = stride[:2]
-            nrow = (input_resolution[0] - patch_size) // row_stride + 1
-            ncol = (input_resolution[1] - patch_size) // col_stride + 1
+            nrow = (input_resolution[0] - patch_size[0]) // row_stride + 1
+            ncol = (input_resolution[1] - patch_size[1]) // col_stride + 1
             positions = nrow * ncol + 1
             self.position_resolution = (nrow, ncol)
         self.positional_embedding = nn.Parameter(scale * torch.randn(positions, width))

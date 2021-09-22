@@ -11,7 +11,10 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .. import build_encoder_module, interp_clip_vp_embedding, interp_conv_weight_spatial
+from .. import (
+    build_encoder_module, interp_clip_vp_embedding, interp_conv_weight_spatial
+)
+from .audio_head import position_resolution, load_pos_embedding
 
 """ The idea is to abstract an encoding head as a four-layer encoder. 
     (1) backbone encoder (most likely to be shared)
@@ -163,6 +166,22 @@ class CLIPAudioHead(MetaHead):
     def __init__(self, cfg, **kwargs):
         super().__init__(cfg, **kwargs)
 
+    def from_pretrained(self, state_dict, cfg, *args, **kwargs):
+        excluded = ["misc.positional_embedding"]
+        new_dict = self.state_dict()
+        old_dict = {k: v for k, v in state_dict.items() if k not in excluded}
+        # interpolate positional embedding
+        key = "misc.positional_embedding"
+        new_pos_shape = self.misc.position_resolution
+        old_pos_shape = position_resolution(
+            cfg.model.audio.resolution, cfg.model.audio.pre_encoder.patch_size, cfg.model.audio.pre_encoder.stride
+        ) # nrow always indicates the time dimenstion
+        n_o, o_n = load_pos_embedding(
+            state_dict, old_dict, new_dict, key, 1, old_pos_shape, new_pos_shape
+        )
+        self.load_state_dict(new_dict)
+        return n_o, o_n
+
     def copy_state_dict(self, state_dict):
         if not self.encoder.batch_first: # TransformerBackbone
             pre_keys = {"conv1.weight"}
@@ -207,7 +226,8 @@ class CLIPAudioHead(MetaHead):
         new_dict = self.state_dict()
         conv_key = "pre_encoder.conv1.weight"
         conv_weight = interp_conv_weight_spatial(old_dict[conv_key], new_dict[conv_key].shape[-2:])
-        old_dict[conv_key] = conv_weight
+        use_mean = new_dict[conv_key].shape[1] != 1
+        old_dict[conv_key] = conv_weight if use_mean else conv_weight.mean(1, keepdim=True)
         # update
         new_keys = set(new_dict.keys())
         old_keys = set(old_dict.keys())
