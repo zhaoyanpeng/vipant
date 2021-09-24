@@ -21,6 +21,7 @@ class MetaEncoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.position_resolution = None
+        self.mask = None
 
     @property
     def hp(self): 
@@ -111,6 +112,10 @@ class GPTPreEncoder(MetaEncoder):
         positional_embedding: torch.Tensor = None,
         class_embedding: torch.Tensor = None, **kwargs
     ):
+        # take features from the eot embedding (eot_token is the highest number in each sequence)
+        # saved for the post encoder
+        self.mask = x.argmax(dim=-1)
+
         x = self.token_embedding(x).type(self.dtype)  # [batch_size, n_ctx, d_model]
         positional_embedding = positional_embedding[:x.shape[1]]
         x = x + positional_embedding.type(self.dtype)
@@ -132,10 +137,12 @@ class GPTPostEncoder(MetaEncoder):
         self, 
         x: torch.Tensor, 
         positional_embedding: torch.Tensor = None,
-        class_embedding: torch.Tensor = None, **kwargs
+        class_embedding: torch.Tensor = None, mask = None, **kwargs
     ):
-        x = self.ln(x[:, 0, :])
-        x = x @ self.proj
+        dtype = x.dtype
+        x = self.ln(x).type(dtype)
+        # x.shape = [batch_size, n_ctx, transformer.width]
+        x = x[torch.arange(x.shape[0]), mask] @ self.proj
         return x
 
 def _vit_position_resolution(input_resolution, patch_size, stride):

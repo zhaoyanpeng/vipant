@@ -1,6 +1,7 @@
 name: 'VALCELossHead'
 layers: []
 scaling: True
+scale_max: null
 va: True
 lv: False
 al: True 

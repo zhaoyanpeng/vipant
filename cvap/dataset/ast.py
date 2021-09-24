@@ -66,6 +66,7 @@ class ASTNpz(data.Dataset):
     def __init__(self, cfg, data_name, train, label_map, weighted):
         data_path = f"{cfg.data_root}/{data_name}.csv"
         assert os.path.isfile(data_path), f"{data_path} is not a file."
+        self.cfg = cfg
         self.label_map = label_map
         self.num_label = len(label_map)
         label_counts = np.zeros(self.num_label)
@@ -73,6 +74,8 @@ class ASTNpz(data.Dataset):
         with open(data_path, "r") as fr:
             for iline, line in enumerate(fr):
                 record = json.loads(line)
+                if cfg.cat_label:
+                    self._cat_label(record)
                 self.dataset.append(record)
                 if not train and iline + 1 == cfg.eval_samples:
                     break
@@ -97,7 +100,6 @@ class ASTNpz(data.Dataset):
         self.aclip_key = "aclip_128"
         self.frame_key = "frame_224"
         self.train = train
-        self.cfg = cfg
 
         acfg = cfg.audio
         self.transform_image = make_image_transform(cfg.resolution)
@@ -106,7 +108,18 @@ class ASTNpz(data.Dataset):
     def _shuffle(self):
         pass
 
-    def _img2numpy(self, fname):
+    def _cat_label(self, record):
+        categories = record["labels"]
+        label_text = [re.sub(
+            f"^{self.cfg.prompt}", "", self.label_map[category][1]
+        ).strip() for category in categories]
+        label_text = self.cfg.prompt + " " +  ", ".join(label_text)
+        record["captions"] = [label_text]
+        record["captions_bpe"] = tokenize(
+            record["captions"], as_list=True
+        ) # add bpe captions
+
+    def _image2numpy(self, fname):
         if fname is not None:
             try:
                 images = np.load(fname)
@@ -138,9 +151,13 @@ class ASTNpz(data.Dataset):
         frame_file = f"{self.cfg.data_root}/{sub_dir}{fkey}/{name}.{frame}" if self.cfg.imagine else None
 
         if not self.cfg.clf: # dummy
-            ict = np.random.choice(len(categories), 1)[0] if self.train else 0
-            category = categories[ict]
-            label, _, text_int = self.label_map[category]
+            if self.cfg.cat_label:
+                record = self.dataset[index]
+                label, text, text_int = 0, record["captions"][0], record["captions_bpe"][0]
+            else:
+                ict = np.random.choice(len(categories), 1)[0] if self.train else 0
+                category = categories[ict]
+                label, text, text_int = self.label_map[category]
         else: # classification task
             label_set = set([self.label_map[category][0] for category in categories])
             label = [1 if i in label_set else 0 for i in range(self.num_label)]
@@ -154,11 +171,19 @@ class ASTNpz(data.Dataset):
 
         max_audio_len = self.cfg.max_audio_len
         audio = np.load(aclip_file)["flag"] # (..., time, freq): `flag' is used as the key accidentally
-        image = self._img2numpy(frame_file)
+        image = self._image2numpy(frame_file)
 
         npad = max_audio_len - audio.shape[0]
         if npad > 0:
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
+
+        if not self.cfg.audio.eval_norms and len(self.audio_norms) == 2:
+            mean, std = self.audio_norms
+            audio = (audio - mean) / std
+
+        #if self.train and self.transform_fbank is not None:
+        if not self.cfg.audio.eval_norms and self.train and self.transform_fbank is not None:
+            audio = self.transform_fbank(audio)
 
         image = image[None]
         audio = audio[None]
@@ -174,6 +199,7 @@ class ASTSrc(data.Dataset):
     def __init__(self, cfg, data_name, train, label_map, weighted):
         data_path = f"{cfg.data_root}/{data_name}.csv"
         assert os.path.isfile(data_path), f"{data_path} is not a file."
+        self.cfg = cfg
         self.label_map = label_map
         self.num_label = len(label_map)
         label_counts = np.zeros(self.num_label) 
@@ -181,6 +207,8 @@ class ASTSrc(data.Dataset):
         with open(data_path, "r") as fr:
             for iline, line in enumerate(fr):
                 record = json.loads(line)
+                if cfg.cat_label:
+                    self._cat_label(record)
                 self.dataset.append(record) 
                 if not train and iline + 1 == cfg.eval_samples:
                     break
@@ -203,9 +231,8 @@ class ASTSrc(data.Dataset):
         self.audio_norms = cfg.audio.norms
         # compatible with AudioSet and Balanced AudioSet
         self.aclip_key = "clip" if "clip" in self.dataset[0] else "aclip"
-        self.frame_key = "frame"
+        self.frame_key = cfg.frame_key
         self.train = train
-        self.cfg = cfg
         
         acfg = cfg.audio
         self.transform_image = make_image_transform(cfg.resolution)
@@ -222,6 +249,17 @@ class ASTSrc(data.Dataset):
     def _shuffle(self):
         pass
 
+    def _cat_label(self, record):
+        categories = record["labels"]
+        label_text = [re.sub(
+            f"^{self.cfg.prompt}", "", self.label_map[category][1]
+        ).strip() for category in categories]
+        label_text = self.cfg.prompt + " " +  ", ".join(label_text)
+        record["captions"] = [label_text]
+        record["captions_bpe"] = tokenize(
+            record["captions"], as_list=True
+        ) # add bpe captions
+
     def _process_item(self, index):
         akey = self.aclip_key
         fkey = self.frame_key
@@ -233,45 +271,64 @@ class ASTSrc(data.Dataset):
         
         sub_dir = "" if len(sub_dir) == 0 else f"{sub_dir}/"
         aclip_file = f"{self.cfg.data_root}/{sub_dir}{akey}/{name}.{aclip}"
-        frame_file = None 
+
+        frame_file = frame_emb_file = None
         if self.cfg.imagine:
-            assert len(images) != 0, f"no frame exist: |images| = {len(images)}"
-            if self.train:
-                idx = np.random.choice(len(images), 1)[0]
+            if isinstance(frame, str):
+                frame_file = f"{self.cfg.data_root}/{sub_dir}{fkey}/{name}.{frame}"
             else:
-                idx = int(np.ceil(len(images) / 2)) - 1
-            frame_file = f"{self.cfg.data_root}/{sub_dir}{fkey}/{name}.{images[idx]}"
+                idx = np.random.choice(len(images), 1)[0] if self.train else int(np.ceil(len(images) / 2)) - 1
+                frame_file = f"{self.cfg.data_root}/{sub_dir}{fkey}/{name}.{images[idx]}"
+                if self.cfg.frame_emb is not None:
+                    frame_emb_file = f"{self.cfg.data_root}/{self.cfg.frame_emb}/{name}.{images[idx].rsplit('.', 1)[0]}.npz"
 
         if not self.cfg.clf:
-            ict = np.random.choice(len(categories), 1)[0] if self.train else 0
-            category = categories[ict]
-            label, _, text_int = self.label_map[category] 
+            if self.cfg.cat_label:
+                record = self.dataset[index]
+                label, text, text_int = 0, record["captions"][0], record["captions_bpe"][0]
+            else:
+                ict = np.random.choice(len(categories), 1)[0] if self.train else 0
+                category = categories[ict]
+                label, text, text_int = self.label_map[category]
         else: # classification task
             label_set = set([self.label_map[category][0] for category in categories])
             label = [1 if i in label_set else 0 for i in range(self.num_label)] 
             text_int = [0] # TODO concatenate all text pieces
 
         item = {"text": text_int, "name": name}
-        return item, label, aclip_file, frame_file
+        return item, label, aclip_file, frame_file, frame_emb_file
 
-    def _img2numpy(self, fname):
-        if fname is not None: 
+    def _image2embed(self, fname):
+        try:
+            image = np.load(fname)["v"]
+        except Exception as e:
+            image = np.random.rand(self.cfg.embed_dim).astype("float32")
+            warnings.warn(f"use random image instead because `{e}` {fname}.")
+        return image
+
+    def _image2numpy(self, fname):
+        if fname is not None:
             try:
-                image = PILImage.open(fname)
+                if fname.endswith(".npz"):
+                    images = np.load(fname)
+                    images = [images[key] for key in images.files if len(images[key]) != 0]
+                    idx = np.random.choice(len(images), 1)[0] if self.train else int(np.ceil(len(images) / 2)) - 1
+                    image = images[idx]
+                else:
+                    image = PILImage.open(fname)
+                    image = self.transform_image(image).cpu().numpy()
             except Exception as e:
                 h = w = self.cfg.resolution
                 image = PILImage.fromarray(
                     (np.random.rand(h, w, 3) * 256).astype(np.uint8)
                 )
                 warnings.warn(f"use random image instead because `{e}` {fname}.")
-            image = self.transform_image(image).cpu().numpy()
+                image = self.transform_image(image).cpu().numpy()
         else:
-            image = np.array([[[1]]]) 
+            image = np.array([[[1]]])
         return image
 
-    def _wav2fbank(self, index):
-        item, label, aclip_file, frame_file = self._process_item(index)
-        image = self._img2numpy(frame_file) 
+    def _audio2numpy_clf(self, aclip_file, label):
         wf, sr = torchaudio.load(aclip_file)
         wf = wf[:1] #wf.mean(0, keepdim=True)
         wf = wf - wf.mean()
@@ -281,7 +338,7 @@ class ASTSrc(data.Dataset):
         #if self.train and sampler.random() < self.cfg.mixup_rate:
         if not self.cfg.audio.eval_norms and self.train and sampler.random() < self.cfg.mixup_rate:
             idx_mix = sampler.randint(0, self.length if self.cfg.np_rnd else self.length - 1)
-            item_mix, label_mix, aclip_file, _ = self._process_item(idx_mix)
+            _, label_mix, aclip_file, _, _ = self._process_item(idx_mix)
             wf_mix, _ = torchaudio.load(aclip_file)
             wf_mix = wf_mix[:1] #wf_mix.mean(0, keepdim=True)
             wf_mix = wf_mix - wf_mix.mean()
@@ -311,10 +368,36 @@ class ASTSrc(data.Dataset):
         npad = max_audio_len - audio.shape[0]
         if npad > 0:
             audio = F.pad(audio, (0, 0, 0, npad), mode='constant', value=0.)
-        return item, audio, image, label 
+        return audio
+
+    def _audio2numpy_cst(self, aclip_file):
+        max_audio_len = self.cfg.max_audio_len
+        audio = _extract_kaldi_spectrogram(
+            aclip_file,
+            self.kaldi_params,
+            train=self.train,
+            max_audio_len=max_audio_len,
+            zero_mean_wf=self.cfg.audio.zero_mean_wf,
+            transform_audio=(
+                self.transform_audio if self.train and not self.cfg.audio.eval_norms else None
+            )
+        ) # (..., time, freq)
+
+        npad = max_audio_len - audio.shape[0]
+        if npad > 0:
+            audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
+        return audio
 
     def __getitem__(self, index):
-        item, audio, image, label = self._wav2fbank(index)
+        item, label, aclip_file, frame_file, frame_emb_file = self._process_item(index)
+
+        # higher priority for pre-computed frame embeddings
+        image = (self._image2embed(frame_emb_file)
+            if frame_emb_file is not None and self.cfg.imagine else self._image2numpy(frame_file)
+        )
+        audio = (self._audio2numpy_clf(aclip_file, label)
+            if self.cfg.clf else self._audio2numpy_cst(aclip_file)
+        )
 
         if not self.cfg.audio.eval_norms and len(self.audio_norms) == 2:
             mean, std = self.audio_norms

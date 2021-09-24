@@ -2,17 +2,22 @@ clip_model_root: "/net/nfs2.mosaic/yann/model/clip"
 clip_model_name: "ViT-B32"
 data_root: "/home/yanpengz/data/audioset" 
 prompt: "the sound of"
+cat_label: False
 label_map: "ontology,eval_segments" 
 data_name: 'npz_train_toy' #'src_train_toy' #
 eval_name: 'npz_eval_toy' #'src_eval_toy' #
 test_name: 'npz_eval_toy' #'src_eval_toy' #
 eval_samples: 250 
-test_samples: 5000
+test_samples: 250
 peep_rate: 1 
 save_rate: 3 
 batch_size: 64 
 epochs: 1000 
 save_epoch: False
+frame_key: "frame"
+frame_emb: null
+embed_dim: ${model.image.embed_dim}
+force_npz: False # force to use npz, i.e., precomputed image and audio features
 clf: False
 np_rnd: False
 imagine: True 

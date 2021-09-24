@@ -54,7 +54,7 @@ class Monitor(object):
         if not self.model.training:
             self.echo("(Zero-shot) Evaluating started...")
             with torch.no_grad():
-                report = self.standard_zero_shot() #self.zero_shot()
+                report = self.zero_shot() #self.standard_zero_shot() #
                 #report = self.infer(self.dataloader, samples=self.cfg.running.eval_samples)
                 self.echo(f"{report}")
                 return None 

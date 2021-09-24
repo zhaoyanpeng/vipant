@@ -61,7 +61,7 @@ class CVAPDP(nn.Module):
     def build(self):
         tunable_params = dict()
         if self.cfg.eval:
-            local_cfg, audio_head_sd, loss_head_sd = load_checkpoint(self.cfg, self.echo)
+            local_cfg, _, audio_head_sd, _, loss_head_sd = load_checkpoint(self.cfg, self.echo)
             from_scratch, image_head_sd, _, _ = load_clip(None, self.cfg, self.echo)
 
             self.image_head = build_image_head(self.cfg.model.image)
@@ -75,7 +75,7 @@ class CVAPDP(nn.Module):
             self.cuda(self.cfg.rank) 
         else:
             # try pre-trained model!
-            local_cfg, audio_head_sd, loss_head_sd = load_checkpoint(self.cfg, self.echo)
+            local_cfg, _, audio_head_sd, _, loss_head_sd = load_checkpoint(self.cfg, self.echo)
             # try clip! TODO do we always have to load CLIP?
             from_scratch, image_head_sd, _, model = load_clip(local_cfg, self.cfg, self.echo)
             # try meme!
@@ -92,6 +92,7 @@ class CVAPDP(nn.Module):
             self.audio_head = build_audio_head(self.cfg.model.audio)
             if not self.cfg.model.audio.from_scratch:
                 if local_cfg is not None:
+                    # TODO better to use `from_pretrained()`
                     self.audio_head.load_state_dict(audio_head_sd)
                     self.echo("Initialize audio encoder from `audio_head`.")
                 elif not from_scratch:

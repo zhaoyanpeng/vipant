@@ -158,7 +158,7 @@ class AudioSetClassifier(nn.Module):
                 tunable_params.update({
                     f"image_head.{k}": v for k, v in self.image_head.named_parameters()
                 })
-            else:
+            elif self.image_head is not None:
                 self.echo("Freeze image encoder.")
             if not self.cfg.model.audio.freeze:
                 tunable_params.update({

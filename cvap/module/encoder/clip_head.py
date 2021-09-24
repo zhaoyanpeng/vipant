@@ -108,8 +108,10 @@ class MetaHead(nn.Module):
         x = self.encoder(x, **kwargs) 
         x = x.permute(1, 0, 2) if not self.encoder.batch_first else x # (L, N, D) -> (N, L, D)
 
+        mask = self.pre_encoder.mask #or self.encoder.mask # text) postion of cls token; audio/image) ?
+
         x = self.post_encoder_addon(x, **kwargs) 
-        x = self.post_encoder(x, **kwargs) 
+        x = self.post_encoder(x, mask=mask, **kwargs)
 
         if kwargs.get("normalized", False):
             x = x / x.norm(dim=-1, keepdim=True)

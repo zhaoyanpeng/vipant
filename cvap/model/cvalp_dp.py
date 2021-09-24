@@ -78,9 +78,11 @@ class CVALPDP(nn.Module):
 
     def collect_state_dict(self):
         return (
-            self.image_head.state_dict() if self.image_head is not None else OrderedDict(),
+            (self.image_head.state_dict()
+            if self.image_head is not None and not self.cfg.model.image.freeze else OrderedDict()),
             self.audio_head.state_dict(),
-            self.text_head.state_dict() if self.text_head is not None else OrderedDict(),
+            (self.text_head.state_dict()
+            if self.text_head is not None and not self.cfg.model.text.freeze else OrderedDict()),
             self.loss_head.state_dict(),
         )
 
@@ -150,9 +152,14 @@ class CVALPDP(nn.Module):
         kwargs.update({"shared_modules": lmodules})
         self.text_head = build_text_head(self.cfg.model.text, **kwargs)
         if not from_scratch and not self.cfg.model.text.from_scratch:
-            n_o, o_n = self.text_head.copy_state_dict(image_head_sd)
-            msg = f" except {n_o}" if len(n_o) > 0 else ""
-            self.echo(f"Initialize text encoder from `image_head`{msg}.")
+            if self.cfg.model.text.from_text:
+                n_o, o_n = self.text_head.copy_state_dict(text_head_sd)
+                msg = f" except {n_o}" if len(n_o) > 0 else ""
+                self.echo(f"Initialize text encoder from `text_head`{msg}.")
+            else:
+                n_o, o_n = self.text_head.copy_state_dict(image_head_sd)
+                msg = f" except {n_o}" if len(n_o) > 0 else ""
+                self.echo(f"Initialize text encoder from `image_head`{msg}.")
         ref_modules = self.text_head.replace_modules(**kwargs)
         self.echo(f"T:  text_head.modules referring to image_head.modules: {ref_modules}.")
         if len(self.text_head.state_dict()) == 0:

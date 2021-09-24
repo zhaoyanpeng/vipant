@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
 )
-from .ast import ASTSrc
+from .ast import ASTNpz, ASTSrc
 from .audioset_cap import AudioCapDatasetSrc
 from .audioset_ast import AudiosetDatasetNpz, ImageAudioCollator
 from clip import tokenize

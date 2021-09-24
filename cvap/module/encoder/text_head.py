@@ -34,6 +34,7 @@ class TextHead(nn.Module):
 
     def copy_state_dict(self, state_dict): 
         self.encoder.load_state_dict(state_dict)
+        return {}, {}
 
     def forward(self, text, *args, **kwargs):
         positional_embedding = kwargs.get("positional_embedding", None)

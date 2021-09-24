@@ -11,7 +11,7 @@ def load_checkpoint(cfg, echo):
     model_file = f"{cfg.model_root}/{cfg.model_name}/{cfg.model_file}"
     if not os.path.isfile(model_file):
         echo(f"Failed to load the checkpoint `{model_file}`")
-        return None, None, None 
+        return (None,) * 5
     echo(f"Loading from {model_file}")
     checkpoint = torch.load(model_file, map_location="cpu")
     local_cfg = checkpoint["cfg"]
@@ -20,7 +20,7 @@ def load_checkpoint(cfg, echo):
     nmodule = len(checkpoint["model"])
     if nmodule == 2:
         audio_head_sd, loss_head_sd = checkpoint["model"]
-        return local_cfg, audio_head_sd, loss_head_sd
+        return local_cfg, None, audio_head_sd, None, loss_head_sd
     elif nmodule == 4:
         image_head_sd, audio_head_sd, text_head_sd, loss_head_sd = checkpoint["model"]
         return local_cfg, image_head_sd, audio_head_sd, text_head_sd, loss_head_sd
@@ -54,7 +54,8 @@ def load_meme(cfg, echo):
         image_head_sd = model.state_dict()
         with_meme = True 
     except Exception as e:
-        echo(f"Failed to load the meme `{acfg.meme_name}` because: {e}") 
+        meme_name = getattr(acfg, "meme_name", None)
+        echo(f"Failed to load the meme `{meme_name}` because: {e}")
         image_head_sd = None 
         with_meme = False 
     return with_meme, image_head_sd

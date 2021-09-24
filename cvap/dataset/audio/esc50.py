@@ -24,14 +24,14 @@ def _extract_kaldi_spectrogram(
     filename, params, train=True, mean_channel=False, zero_mean_wf=False, max_audio_len=1000, transform_audio=None
 ):
     waveform, sample_rate = torchaudio.load(filename)
-    if mean_channel: # mean along channel
+    if mean_channel: # mean along channel # TODO else branch should take a specific channel
         waveform = waveform.mean(0, keepdim=True)
     if transform_audio is not None:
         waveform = transform_audio(waveform) 
     waveform = RandomCrop.random_crop(
         waveform, int((max_audio_len / 100 + 0.05) * sample_rate), train=train
     ) # divided by 100 because kaldi has a frame shift of 10, additional 0.05s
-    if zero_mean_wf:
+    if zero_mean_wf: # TODO should extract the 1st channel before the mean
         waveform = waveform - waveform.mean()
     fbank_feat = torchaudio.compliance.kaldi.fbank(
         waveform,

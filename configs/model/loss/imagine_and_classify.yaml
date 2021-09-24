@@ -7,6 +7,7 @@ ce:
     name: 'CELossHead'
     alive: True
     scaling: True
+    scale_max: null
 bce:
     name: 'BCELossHead'
     alive: True

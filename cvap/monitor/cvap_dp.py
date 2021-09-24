@@ -170,14 +170,16 @@ class Monitor(object):
             force_eval = False # recommended by SGDR
             warmup = not self.cfg.optimizer.use_lars and self.cfg.optimizer.warmup and \
                 (self.total_step + inc) <= self.cfg.optimizer.warmup_steps
-            if warmup and (self.total_step + inc) % warmup_step_rate == 0:
+            # it is important to always warm up lr at the first step otherwise
+            # the optimizer will use the default / initial lr
+            if warmup and ((self.total_step + inc) % warmup_step_rate == 0 or self.total_step == 0):
                 ratio = ((self.total_step + inc) / self.cfg.optimizer.warmup_steps) # * self.cfg.optimizer.lr
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = ratio * param_group["initial_lr"]
                 lrs = [param_group['lr'] for param_group in self.optimizer.param_groups]
                 force_eval = lrs == self.scheduler.base_lrs
                 lrs = [f"{lr:.2e}" for lr in lrs]
-                self.echo(f"warmup lr: {' '.join(lrs)}")
+                self.echo(f"warmup lr: {' '.join(lrs)} @ {self.total_step}")
 
             self.optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast():

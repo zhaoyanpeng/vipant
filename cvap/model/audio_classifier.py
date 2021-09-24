@@ -107,7 +107,10 @@ class AudioClassifier(nn.Module):
             self.echo(f"Initialize audio encoder from `audio_head`{msg}.")
 
             self.text_head = build_text_head(self.cfg.model.text) #
-            self.text_head.copy_state_dict(text_head_sd)
+            #self.text_head.copy_state_dict(text_head_sd)
+            n_o, o_n = self.text_head.copy_state_dict(text_head_sd)
+            msg = f" except {n_o}" if len(n_o) > 0 else ""
+            self.echo(f"Initialize text encoder from `text_head`{msg}.")
 
             self.loss_head = build_loss_head(self.cfg.model.loss, **kwargs)
 

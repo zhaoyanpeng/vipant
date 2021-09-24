@@ -173,7 +173,7 @@ class ImageAudioDatasetSrc(data.Dataset):
 
         return name, aclip_file, frame_file, frame_emb_file
 
-    def _image2emb(self, fname):
+    def _image2embed(self, fname):
         try:
             image = np.load(fname)["v"]
         except Exception as e:
@@ -233,7 +233,7 @@ class ImageAudioDatasetSrc(data.Dataset):
         name, aclip_file, frame_file, frame_emb_file = self._process_item(index)
 
         # higher priority for pre-computed frame embeddings
-        image = self._image2emb(frame_emb_file) if frame_emb_file is not None else self._image2numpy(frame_file)
+        image = self._image2embed(frame_emb_file) if frame_emb_file is not None else self._image2numpy(frame_file)
         audio = self._audio2numpy(aclip_file)
 
         image = image[None]

@@ -1,6 +1,7 @@
 name: 'CLIPTextHead'
 freeze: True #False #
 from_scratch: False #True #
+from_text: True
 width: 512
 embed_dim: ${model.image.embed_dim}
 resolution: None

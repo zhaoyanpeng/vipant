@@ -21,7 +21,9 @@ from clip import load
 from ..module import (
     build_image_head, build_audio_head, build_text_head, build_loss_head
 )
-
+from . import (
+    load_checkpoint, load_clip, load_meme
+)
 
 class ASTClassifier(nn.Module):
     def __init__(self, cfg, echo):
@@ -32,11 +34,16 @@ class ASTClassifier(nn.Module):
     def forward(self, images, audios, labels, *args, **kwargs):
         device_ids = kwargs.get("device_ids", [0])
         # how to asynchronize the two `data_parallel` 
-        kwargs = {"normalized": False, "names": kwargs.get("names", None)}
+        kwargs = {"normalized": self.loss_head.normalized, "names": kwargs.get("names", None)}
 
-        image_features = data_parallel(
-            self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
-        ) if self.image_head is not None else None
+        if self.image_head is not None:
+            image_features = data_parallel(
+                self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
+            )
+        else: # pre-computed unnormalized features
+            if self.loss_head.normalized:
+                images = images / images.norm(dim=-1, keepdim=True)
+            image_features = images
 
         audio_features = data_parallel(
             self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
@@ -72,51 +79,9 @@ class ASTClassifier(nn.Module):
     
     def build(self, **kwargs):
         tunable_params = dict()
-        def load_checkpoint():
-            model_file = f"{self.cfg.model_root}/{self.cfg.model_name}/{self.cfg.model_file}"
-            self.echo(f"Loading from {model_file}")
-            if not os.path.isfile(model_file):
-                return None, None, None 
-            checkpoint = torch.load(model_file, map_location="cpu")
-            local_cfg = checkpoint["cfg"]
-            local_str = OmegaConf.to_yaml(local_cfg)
-            self.echo(f"Old configs:\n\n{local_str}")
-            audio_head_sd, loss_head_sd = checkpoint["model"]
-            return local_cfg, audio_head_sd, loss_head_sd 
-        def load_clip(local_cfg):
-            try: # try image / text backbone
-                rcfg = self.cfg.running
-                model, self.T = load(
-                    rcfg.clip_model_name, rcfg.clip_model_root, device="cpu", jit=False
-                )
-                image_head_sd = model.visual.state_dict() if local_cfg is None else None
-                text_head_sd = OrderedDict()
-                for k, v in model.state_dict().items():
-                    if k.startswith("visual") or k == "logit_scale":
-                        continue
-                    #k = re.sub("^transformer\.", "encoder.", k)
-                    text_head_sd[k] = v
-                from_scratch = False
-            except Exception as e:
-                self.echo(f"Will learn from scratch because: {e}") 
-                self.T = image_head_sd = text_head_sd = None 
-                from_scratch = True
-            return from_scratch, image_head_sd, text_head_sd, model 
-        def load_meme():
-            try: # try image / text backbone
-                acfg = self.cfg.model.audio
-                model = torch.hub.load(acfg.meme_path, acfg.meme_name, pretrained=True)
-                image_head_sd = model.state_dict()
-                with_meme = True 
-            except Exception as e:
-                self.echo(f"Failed to load `{acfg.meme_name}` because: {e}") 
-                image_head_sd = None 
-                with_meme = False 
-            return with_meme, image_head_sd
-
         if self.cfg.eval:
-            local_cfg, audio_head_sd, loss_head_sd = load_checkpoint()
-            from_scratch, image_head_sd, _, _ = load_clip(None)
+            local_cfg, _, audio_head_sd, _, loss_head_sd = load_checkpoint(self.cfg, self.echo)
+            from_scratch, image_head_sd, _, _ = load_clip(None, self.cfg, self.echo)
 
             self.image_head = build_image_head(self.cfg.model.image)
             if not from_scratch:
@@ -127,51 +92,44 @@ class ASTClassifier(nn.Module):
             self.audio_head = build_audio_head(local_cfg.model.audio)
             self.audio_head.load_state_dict(audio_head_sd)
 
-            self.loss_head = build_loss_head(self.cfg.model.loss, **kwargs)
+            self.loss_head = build_loss_head(local_cfg.model.loss, **kwargs)
             self.loss_head.load_state_dict(loss_head_sd)
 
             self.cuda(self.cfg.rank) 
         else:
             # try pre-trained model!
-            local_cfg, audio_head_sd, loss_head_sd = load_checkpoint()
+            local_cfg, _, audio_head_sd, _, loss_head_sd = load_checkpoint(self.cfg, self.echo)
             # try clip! TODO do we always have to load CLIP?
-            from_scratch, image_head_sd, _, _ = load_clip(local_cfg) 
+            from_scratch, image_head_sd, _, model = load_clip(None, self.cfg, self.echo)
             # try meme!
-            with_meme, meme_image_head_sd = load_meme() 
+            with_meme, meme_image_head_sd = load_meme(self.cfg, self.echo)
 
             self.image_head = build_image_head(self.cfg.model.image)
             if not from_scratch and not self.cfg.model.image.from_scratch and image_head_sd is not None:
                 self.image_head.copy_state_dict(image_head_sd)
                 self.echo("Initialize image encoder from `image_head`.")
-            if not self.cfg.running.imagine:
+            if not self.cfg.running.imagine or self.cfg.running.frame_emb is not None:
                 self.image_head = None
                 self.echo("Destory image encoder.")
             
-            #cfg = local_cfg if local_cfg is not None else self.cfg
             self.audio_head = build_audio_head(self.cfg.model.audio)
             if not self.cfg.model.audio.from_scratch:
                 if local_cfg is not None:
+                    # TODO better to use `from_pretrained()`
                     self.audio_head.load_state_dict(audio_head_sd)
-                    """
-                    if (list(audio_head_sd.keys())[0]).startswith("encoder."):
-                        audio_head_sd_new = OrderedDict()
-                        for k, v in audio_head_sd.items():
-                            k = re.sub("^encoder\.", "", k)
-                            audio_head_sd_new[k] = v
-                        audio_head_sd = audio_head_sd_new
-                    self.audio_head.copy_state_dict(audio_head_sd)
-                    """
                     self.echo("Initialize audio encoder from `audio_head`.")
                 elif not from_scratch:
                     if with_meme: # higher priority
-                        self.audio_head.copy_state_dict(meme_image_head_sd)
-                        self.echo("Initialize audio encoder from `meme_image_head`.")
+                        msg = " `meme_image_head`"
+                        n_o, o_n = self.audio_head.copy_state_dict(meme_image_head_sd)
                     else:
-                        self.audio_head.copy_state_dict(image_head_sd)
-                        self.echo("Initialize audio encoder from `image_head`.")
+                        msg = " `image_head`"
+                        n_o, o_n = self.audio_head.copy_state_dict(image_head_sd)
+                    msg += f" except {n_o}" if len(n_o) > 0 else ""
+                    self.echo(f"Initialize audio encoder from{msg}.")
                 else:
                     self.echo("Have to learn from scratch.")
-                
+
             self.loss_head = build_loss_head(self.cfg.model.loss, **kwargs)
             tunable_params = {
                 f"loss_head.{k}": v for k, v in self.loss_head.named_parameters()
@@ -180,7 +138,7 @@ class ASTClassifier(nn.Module):
                 tunable_params.update({
                     f"image_head.{k}": v for k, v in self.image_head.named_parameters()
                 })
-            else:
+            elif self.image_head is not None:
                 self.echo("Freeze image encoder.")
             if not self.cfg.model.audio.freeze:
                 tunable_params.update({
@@ -190,4 +148,3 @@ class ASTClassifier(nn.Module):
                 self.echo("Freeze audio encoder.")
             self.cuda(self.cfg.rank)
         return tunable_params
-

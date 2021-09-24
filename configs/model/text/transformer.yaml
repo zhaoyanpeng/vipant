@@ -1,6 +1,7 @@
 name: 'TextHead'
 freeze: True 
 from_scratch: False
+from_text: True
 embed_dim: ${model.image.embed_dim}
 vocab_size: 49408
 ctx_len: 77
