@@ -35,8 +35,7 @@ class ASTClassifier(nn.Module):
         device_ids = kwargs.get("device_ids", [0])
         # how to asynchronize the two `data_parallel` 
         kwargs = {"normalized": self.loss_head.normalized, "names": kwargs.get("names", None)}
-
-        if self.image_head is not None:
+        if self.image_head is not None and list(images.shape[1:]) != [1, 1, 1]:
             image_features = data_parallel(
                 self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
             )
@@ -63,6 +62,12 @@ class ASTClassifier(nn.Module):
         )
         return audio_features
 
+    def encode_text(self, text, *args, device_ids=[0], **kwargs):
+        text_features = data_parallel(
+            self.text_head, text, device_ids=device_ids, module_kwargs=kwargs
+        )
+        return text_features
+
     def collect_audio_state_dict(self):
         return (
             self.audio_head.state_dict(), 
@@ -81,19 +86,33 @@ class ASTClassifier(nn.Module):
         tunable_params = dict()
         if self.cfg.eval:
             local_cfg, _, audio_head_sd, _, loss_head_sd = load_checkpoint(self.cfg, self.echo)
-            from_scratch, image_head_sd, _, _ = load_clip(None, self.cfg, self.echo)
+            from_scratch, image_head_sd, text_head_sd, _ = load_clip(None, self.cfg, self.echo)
 
             self.image_head = build_image_head(self.cfg.model.image)
             if not from_scratch:
                 self.image_head.copy_state_dict(image_head_sd)
+                self.echo("Initialize image encoder from `image_head`.")
             else:
                 self.image_head = None
+                self.echo("Destory image encoder.")
             
-            self.audio_head = build_audio_head(local_cfg.model.audio)
-            self.audio_head.load_state_dict(audio_head_sd)
+            self.audio_head = build_audio_head(self.cfg.model.audio)
+            #self.audio_head.load_state_dict(audio_head_sd)
+            n_o, o_n = self.audio_head.from_pretrained(audio_head_sd, local_cfg)
+            msg = f" except {n_o}" if len(n_o) > 0 else ""
+            self.echo(f"Initialize audio encoder from `audio_head`{msg}.")
 
-            self.loss_head = build_loss_head(local_cfg.model.loss, **kwargs)
-            self.loss_head.load_state_dict(loss_head_sd)
+            self.text_head = build_text_head(self.cfg.model.text) #
+            #self.text_head.copy_state_dict(text_head_sd)
+            n_o, o_n = self.text_head.copy_state_dict(text_head_sd)
+            msg = f" except {n_o}" if len(n_o) > 0 else ""
+            self.echo(f"Initialize text encoder from `text_head`{msg}.")
+
+            self.loss_head = build_loss_head(self.cfg.model.loss, **kwargs)
+            try:
+                self.loss_head.load_state_dict(loss_head_sd)
+            except Exception as e:
+                self.echo(f"Failed to load `loss_head` (expected in zero-shot mode) because: {e}")
 
             self.cuda(self.cfg.rank) 
         else:

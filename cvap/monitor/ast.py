@@ -1,5 +1,6 @@
 from omegaconf import OmegaConf
 import os, re
+import itertools
 from collections import abc, defaultdict
 
 import time
@@ -62,6 +63,17 @@ class Monitor(object):
     def build_data(self):
         rcfg = self.cfg.running
         label_map = build_label_map(rcfg.data_root, label_map=rcfg.label_map, prompt=rcfg.prompt)
+        lid2int = [0] * len(label_map)
+        for k, v in label_map.items():
+            lid2int[v[0]] = v[2]
+        checksum = []
+        for i, (k, v) in enumerate(label_map.items()):
+            checksum.append(v[-1] == lid2int[v[0]])
+            if i < 10 and rcfg.zero_shot:
+                print(k, v)
+        #print(all(checksum))
+        self.lid2int = lid2int
+
         self.echo(f"Total {len(label_map)} sound classes.")
         data_name = rcfg.eval_name if self.cfg.eval else rcfg.data_name
         _, self.dataloader = build_dataloader(
@@ -95,6 +107,14 @@ class Monitor(object):
         if self.cfg.running.audio.eval_norms:
             return # `eval_norms` is the only task
         if not self.model.training:
+            if self.cfg.running.zero_shot:
+                self.echo("(Zero-shot) Evaluating started...")
+                with torch.no_grad():
+                    report = self.zero_shot(
+                        self.dataloader, samples=self.cfg.running.eval_samples, gold_file=self.gold_file
+                    )
+                self.echo(f"{report}")
+                return None
             self.echo("Evaluating started...")
             with torch.no_grad():
                 report = self.infer(
@@ -284,6 +304,50 @@ class Monitor(object):
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
         self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
         return model.report(gold_file=gold_file)
+
+    def encode_text(self, device_ids):
+        #import random; random.shuffle(self.lid2int)
+        s, bsize, text = 0, 50, []
+        while True:
+            lid2int = self.lid2int[s : s + bsize]
+            lid2int = np.array(list(itertools.zip_longest(*lid2int, fillvalue=0))).T
+            text_features = self.model.encode_text(
+                torch.tensor(lid2int, device=self.device), device_ids=device_ids
+            )
+            text.append(text_features)
+            s += bsize
+            if s >= len(self.lid2int):
+                break
+        return torch.cat(text, dim=0)
+
+    def zero_shot(self, dataloader, samples=float("inf"), iepoch=0, gold_file=None):
+        losses, nsample, nchunk, nbatch = 0, 0, 1, len(dataloader)
+        device_ids = [i for i in range(self.cfg.num_gpus)]
+        if isinstance(self.model, DistributedDataParallel):
+            dataloader.sampler.set_epoch(iepoch)
+            nchunk = self.cfg.num_gpus
+        peep_rate = max(10, (len(dataloader) // 10))
+        text_features = self.encode_text(device_ids)
+        start_time = time.time()
+        for ibatch, batch in enumerate(dataloader):
+            if nsample >= samples:
+                #print(f"{nsample}\t{ibatch}/{nbatch} continue")
+                break #continue # iterate through every batch
+            images, audios, _, labels, names = self.make_batch(batch)
+            #msg = f"{images[0, 0, 50, 50:55]} {audios[0, 0, 50, 50:55]}" # if ibatch == 0 else ""
+            #print(f"{nsample}\t{ibatch}/{nbatch} done {msg}")
+            loss = self.model(images, audios, labels, device_ids=device_ids, names=names)
+            nsample += images.shape[0] * nchunk
+            losses += loss
+            if self.cfg.rank == 0 and (ibatch + 1) % peep_rate == 0:
+                self.echo(
+                    f"step {ibatch}\t" + #gnorm {grad_norm():.2f} " +
+                    f"loss {losses / (ibatch + 1):.8f} " +
+                    f"{nsample / (time.time() - start_time):.2f} samples/s"
+                )
+        model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
+        self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
+        return model.report(gold_file=gold_file, text=text_features)
 
     def save(self):
         fsave = f"{self.cfg.alias_root}/{self.cfg.model_name}/{self.total_step:08d}.pth"

@@ -89,7 +89,6 @@ class Monitor(object):
             self.echo(f"Will do test every {rcfg.save_rate} steps on {len(self.testloader)} batches ({test_name}).")
             self.gold_file_test = f"{rcfg.data_root}/{test_name}.csv"
         return len(label_map)
-        return len(label_map)
 
     def learn(self):
         if self.cfg.running.audio.eval_norms:

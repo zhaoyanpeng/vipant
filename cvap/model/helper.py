@@ -16,7 +16,8 @@ def load_checkpoint(cfg, echo):
     checkpoint = torch.load(model_file, map_location="cpu")
     local_cfg = checkpoint["cfg"]
     local_str = OmegaConf.to_yaml(local_cfg)
-    echo(f"Old configs:\n\n{local_str}")
+    if cfg.verbose:
+        echo(f"Old configs:\n\n{local_str}")
     nmodule = len(checkpoint["model"])
     if nmodule == 2:
         audio_head_sd, loss_head_sd = checkpoint["model"]

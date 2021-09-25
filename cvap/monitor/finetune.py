@@ -52,10 +52,15 @@ class Monitor(object):
         
     def learn(self):
         if not self.model.training:
-            self.echo("(Zero-shot) Evaluating started...")
+            if self.cfg.running.zero_shot:
+                self.echo("(Zero-shot) Evaluating started...")
+                with torch.no_grad():
+                    report = self.standard_zero_shot() #self.zero_shot() #
+                self.echo(f"{report}")
+                return None
+            self.echo("Evaluating started...")
             with torch.no_grad():
-                report = self.zero_shot() #self.standard_zero_shot() #
-                #report = self.infer(self.dataloader, samples=self.cfg.running.eval_samples)
+                report = self.infer(self.dataloader, samples=self.cfg.running.eval_samples)
                 self.echo(f"{report}")
                 return None 
         #self.save() 

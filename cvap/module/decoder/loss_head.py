@@ -372,6 +372,9 @@ class ClassificationHead(LossHead):
         if text is not None:
             audios = torch.cat(self.audios)
             labels = torch.cat(self.x2s).unsqueeze(-1)
+            if False and not self.normalized:
+                audios = audios / audios.norm(dim=-1, keepdim=True)
+                text = text / text.norm(dim=-1, keepdim=True)
             # audio -> label 
             x12 = audios @ text.t()
             ind_12 = x12.argsort(descending=True)

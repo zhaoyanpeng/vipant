@@ -63,6 +63,7 @@ def build_audioset_label_map(data_root, label_map="ontology,eval_segments", prom
         )
     text_list = [item[1] for item in category_list]
     label_int = tokenize(text_list, as_list=True)
+    category_list = [item + (label_int[i],) for i, item in enumerate(category_list)]
     #label_map = {category_list[i][0]: (i, category_list[i][1], label_int[i]) for i in range(len(category_list))}
 
     _, ytid_dict = collect_ytid(data_root, label_files)
@@ -71,7 +72,7 @@ def build_audioset_label_map(data_root, label_map="ontology,eval_segments", prom
         v[0][2] for _, v in ytid_dict.items()
     ))
     category_list = [item for item in category_list if item[0] in label_set]
-    label_map = {category_list[i][0]: (i, category_list[i][1], label_int[i]) for i in range(len(category_list))}
+    label_map = {category_list[i][0]: (i,) + category_list[i][1:] for i in range(len(category_list))}
     #print(text_list, len(label_set))
     #print(label_map, len(label_map))
     return label_map 

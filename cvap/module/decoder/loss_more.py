@@ -69,9 +69,23 @@ class BCELossHead(LossHead):
             self.ids.extend(names)
         return loss_mean_x1
 
-    def report(self, gold_file=None, **kwargs):
-        x1s = torch.cat(self.x1s).cpu().numpy()
-        x2s = torch.cat(self.x2s).cpu().numpy()
+    def zero_shot(self, text, gold_file):
+        audios = torch.cat(self.audios)
+        if True and not self.normalized:
+            audios = audios / audios.norm(dim=-1, keepdim=True)
+            text = text / text.norm(dim=-1, keepdim=True)
+        # audio -> label
+        x1s = audios @ text.t()
+        return self.report(gold_file=gold_file, text=None, x1s=x1s.cpu().numpy())
+
+    def report(self, gold_file=None, x1s=None, x2s=None, **kwargs):
+        # zero-shot classification
+        text = kwargs.get("text", None)
+        if text is not None:
+            return self.zero_shot(text, gold_file)
+        # supervised classification
+        x1s = torch.cat(self.x1s).cpu().numpy() if x1s is None else x1s
+        x2s = torch.cat(self.x2s).cpu().numpy() if x2s is None else x2s
         nsample, nlabel = x1s.shape[:2]
         
         ap_micro = metrics.average_precision_score(x2s, x1s, average='micro')
@@ -247,12 +261,12 @@ class ImagineAndClassifyLossHead(LossHead):
         ])
         return msg
 
-    def report(self, gold_file=None):
+    def report(self, gold_file=None, **kwargs):
         report_ce = report_bce = ""
         if self.loss_ce is not None and hasattr(self.loss_ce, "x1s") and hasattr(self.loss_ce, "x2s"):
-            report_ce = self.loss_ce.report(gold_file=gold_file)
+            report_ce = self.loss_ce.report(gold_file=gold_file, **kwargs)
         if self.loss_bce is not None:
-            report_bce = self.loss_bce.report(gold_file=gold_file)
+            report_bce = self.loss_bce.report(gold_file=gold_file, **kwargs)
         return f"{report_ce}\n{report_bce}"
 
     def infer(self, x1, x2, x3, *args, **kwargs):

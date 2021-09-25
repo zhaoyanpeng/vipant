@@ -18,6 +18,7 @@ frame_key: "frame"
 frame_emb: null
 embed_dim: ${model.image.embed_dim}
 force_npz: False # force to use npz, i.e., precomputed image and audio features
+zero_shot: False
 clf: True
 np_rnd: False
 imagine: False

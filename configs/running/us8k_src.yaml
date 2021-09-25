@@ -1,8 +1,9 @@
 clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
 clip_model_name: "ViT-B32"
 data_root: "/home/yanpengz/data/us8k/UrbanSound8K"
-label_map: "the sound of " #"label_map"
+prompt: "the sound of " #"label_map"
 data_name: 'UrbanSound8K' 
+zero_shot: False
 eval_name: '' 
 test_name: '' 
 eval_samples: 5000

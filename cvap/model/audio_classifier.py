@@ -32,17 +32,16 @@ class AudioClassifier(nn.Module):
     def forward(self, audios, labels, *args, **kwargs):
         device_ids = kwargs.get("device_ids", [0])
         # how to asynchronize the two `data_parallel` 
-        kwargs = {"normalized": False, "names": kwargs.get("names", None)}
+        kwargs = {"normalized": self.loss_head.normalized, "names": kwargs.get("names", None)}
         audio_features = data_parallel(
             self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
         )
         loss = self.loss_head(audio_features, labels, **kwargs)
         return loss     
     
-    def encode_text(self, text, *args, **kwargs):
-        device_ids = kwargs.get("device_ids", [0])
+    def encode_text(self, text, *args, device_ids=[0], **kwargs):
         text_features = data_parallel(
-            self.text_head, text, device_ids=device_ids
+            self.text_head, text, device_ids=device_ids, module_kwargs=kwargs
         )
         return text_features
 

@@ -195,9 +195,9 @@ def build_dataloader_list_esc50(cfg):
             lambda data_list=eval_list: build_dataloader(cfg, data_list, shuffle=False, train=False)
         ),)
 
-    label_path = f"{rcfg.data_root}/meta/{rcfg.label_map}.json"
+    label_path = f"{rcfg.data_root}/meta/{rcfg.prompt}.json"
     if not os.path.isfile(label_path):
-        prompt = rcfg.label_map.strip()
+        prompt = rcfg.prompt.strip()
         lid2int = [prompt + " " + lid2str[i].replace("_", " ") for i in range(len(lid2str))]
         label_map = {i: i for i in range(len(lid2str))}
     else:
@@ -248,9 +248,9 @@ def build_dataloader_list_us8k(cfg):
             lambda data_list=eval_list: build_dataloader(cfg, data_list, shuffle=False, train=False)
         ),)
 
-    label_path = f"{rcfg.data_root}/meta/{rcfg.label_map}.json"
+    label_path = f"{rcfg.data_root}/meta/{rcfg.prompt}.json"
     if not os.path.isfile(label_path):
-        prompt = rcfg.label_map.strip()
+        prompt = rcfg.prompt.strip()
         lid2int = [prompt + " " + lid2str[i].replace("_", " ") for i in range(len(lid2str))]
         label_map = {i: i for i in range(len(lid2str))}
     else:
