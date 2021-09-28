@@ -8,7 +8,7 @@ def exclude_bias_or_norm(p):
 
 def adjust_learning_rate(cfg, optimizer, dataloader, step):
     max_steps = cfg.epochs * len(dataloader)
-    warmup_steps = 10 * len(dataloader)
+    warmup_steps = int(cfg.warmup_epoch * len(dataloader))
     base_lr = cfg.batch_size / 256
     if step < warmup_steps:
         lr = base_lr * step / warmup_steps

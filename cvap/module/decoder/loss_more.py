@@ -13,6 +13,7 @@ import torch
 import torch.nn.functional as F
 import torch.distributed as dist
 from torch import nn
+from torch.nn.utils.rnn import pad_sequence
 
 from collections import defaultdict
 from clip import _tokenizer, LayerNorm, Transformer, ModifiedResNet, VisualTransformer
@@ -135,6 +136,59 @@ class BCELossHead(LossHead):
         logit_scale = self.logit_scale.exp()
         logits_per_x1 = logit_scale * self.linear(x1)
         loss_mean_x1 = self.loss_fn(logits_per_x1, x2.float())
+        return loss_mean_x1
+
+class BCHingeLossHead(BCELossHead):
+    def __init__(self, cfg, **kwargs):
+        super().__init__(cfg, **kwargs)
+        self.loss_fn = nn.MultiLabelMarginLoss()
+
+    def convert_label(self, label):
+        """ label: binary matrix
+        """
+        #sequences = []
+        #for i in range(len(label)):
+        #    lid = label[i].nonzero(as_tuple=True)[0]
+        #    sequences.append(lid)
+        #sequences = pad_sequence(sequences, batch_first=True, padding_value=-1)
+        sequences = []
+        bsize, length = label.shape
+        for i in range(bsize):
+            lid = label[i].nonzero(as_tuple=True)[0]
+            sequences.append(torch.cat(
+                (lid, lid.new_zeros(length - len(lid)).fill_(-1))
+            ))
+        sequences = torch.stack(sequences, 0)
+        return sequences
+
+    def infer(self, x1, x2, *args, **kwargs):
+        if not hasattr(self, "audios") or not hasattr(self, "x1s") or \
+            not hasattr(self, "x2s") or not hasattr(self, "ids"):
+            self.audios, self.x1s, self.x2s, self.ids = [], [], [], []
+        self.audios.append(x1)
+        logit_scale = self.logit_scale.exp()
+        logits_per_x1 = logit_scale * self.linear(x1)
+        label = self.convert_label(x2)
+        loss_mean_x1 = self.loss_fn(logits_per_x1, label)
+        predictions = torch.sigmoid(logits_per_x1)
+        self.x1s.append(predictions)
+        self.x2s.append(x2)
+        names = kwargs.get("names", None)
+        if names is not None:
+            self.ids.extend(names)
+        return loss_mean_x1
+
+    def forward(self, x1, x2, *args, **kwargs):
+        """ x1 is the input features and x2 is the label
+        """
+        if not self.training:
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                return self.infer(x1, x2, *args, **kwargs)
+            return None
+        logit_scale = self.logit_scale.exp()
+        logits_per_x1 = logit_scale * self.linear(x1)
+        label = self.convert_label(x2)
+        loss_mean_x1 = self.loss_fn(logits_per_x1, label)
         return loss_mean_x1
 
 class BCEAndCELossHead(LossHead):
