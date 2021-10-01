@@ -121,6 +121,8 @@ class CVALPDP(nn.Module):
         return tunable_params
 
     def _build_siamese_backbone(self, **kwargs):
+        # try pre-trained model!
+        local_cfg, _, audio_head_sd, _, loss_head_sd = load_checkpoint(self.cfg, self.echo)
         from_scratch, image_head_sd, text_head_sd, _ = load_clip(None, self.cfg, self.echo)
 
         # image_head's parameters as the reference
@@ -140,10 +142,17 @@ class CVALPDP(nn.Module):
             "shared_modules": amodules, "reference": self.image_head, "keep_hp": scfg.keep_hp
         }
         self.audio_head = build_audio_head(self.cfg.model.audio, **kwargs)
-        if not from_scratch and not self.cfg.model.audio.from_scratch:
-            n_o, o_n = self.audio_head.copy_state_dict(image_head_sd)
-            msg = f" except {n_o}" if len(n_o) > 0 else ""
-            self.echo(f"Initialize audio encoder from `image_head`{msg}.")
+        if not self.cfg.model.audio.from_scratch:
+            if local_cfg is not None:
+                n_o, o_n = self.audio_head.from_pretrained(audio_head_sd, local_cfg)
+                msg = f" except {n_o}" if len(n_o) > 0 else ""
+                self.echo(f"Initialize audio encoder from `audio_head`{msg}.")
+            elif not from_scratch:
+                n_o, o_n = self.audio_head.copy_state_dict(image_head_sd)
+                msg = f" except {n_o}" if len(n_o) > 0 else ""
+                self.echo(f"Initialize audio encoder from `image_head`{msg}.")
+            else:
+                self.echo("Have to learn from scratch.")
         ref_modules = self.audio_head.replace_modules(**kwargs)
         self.echo(f"A: audio_head.modules referring to image_head.modules: {ref_modules}.")
 

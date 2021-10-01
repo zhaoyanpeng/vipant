@@ -101,7 +101,15 @@ def load_pos_embedding(
     if new_pos_shape == old_pos_shape:
         new_pos_emb = old_pos_emb # do nothing
     elif use_slice and new_pos_shape[-1] == old_pos_shape[-1] and num_pos_required + bop <= num_pos:
-        new_pos_emb = old_pos_emb[:num_pos_required + bop] # first k time steps
+        extra = old_pos_shape[-2] - new_pos_shape[-2]
+        if extra == 0:
+            new_pos_emb = old_pos_emb[:num_pos_required + bop] # first k time steps
+        else:
+            start = 6 # [0, extra]
+            start = start * old_pos_shape[-1] + bop
+            new_pos_emb = torch.cat((
+                old_pos_emb[:bop], old_pos_emb[start : start + num_pos_required]
+            ), 0)
     else: # interpolate
         shape = (-1,) + old_pos_shape + (pos_dim,)
         ptensor = old_pos_emb[bop:].reshape(shape).permute(0, 3, 1, 2)

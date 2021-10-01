@@ -252,6 +252,7 @@ def build_dataloader_list_us8k(cfg):
     if not os.path.isfile(label_path):
         prompt = rcfg.prompt.strip()
         lid2int = [prompt + " " + lid2str[i].replace("_", " ") for i in range(len(lid2str))]
+        #lid2int = [lid2str[i].replace("_", " ") + " " + prompt for i in range(len(lid2str))]
         label_map = {i: i for i in range(len(lid2str))}
     else:
         lid2int = [lid2str[i].replace("_", " ") for i in range(len(lid2str))]

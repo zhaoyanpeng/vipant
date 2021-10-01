@@ -29,3 +29,7 @@ resolution: ${model.image.resolution}
 # audio backbone
 max_audio_len: ${running.audio.max_len}
 num_mel_bins: ${running.audio.num_mel_bins} 
+excl_modules: # will be frozen
+    vmodules: []
+    amodules: []
+    lmodules: []

@@ -168,9 +168,10 @@ class BCHingeLossHead(BCELossHead):
         self.audios.append(x1)
         logit_scale = self.logit_scale.exp()
         logits_per_x1 = logit_scale * self.linear(x1)
+        logits_per_x1 = torch.sigmoid(logits_per_x1)
         label = self.convert_label(x2)
         loss_mean_x1 = self.loss_fn(logits_per_x1, label)
-        predictions = torch.sigmoid(logits_per_x1)
+        predictions = logits_per_x1 #torch.sigmoid(logits_per_x1)
         self.x1s.append(predictions)
         self.x2s.append(x2)
         names = kwargs.get("names", None)
@@ -187,6 +188,7 @@ class BCHingeLossHead(BCELossHead):
             return None
         logit_scale = self.logit_scale.exp()
         logits_per_x1 = logit_scale * self.linear(x1)
+        logits_per_x1 = torch.sigmoid(logits_per_x1)
         label = self.convert_label(x2)
         loss_mean_x1 = self.loss_fn(logits_per_x1, label)
         return loss_mean_x1

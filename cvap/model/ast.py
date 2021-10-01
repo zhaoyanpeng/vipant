@@ -160,9 +160,12 @@ class ASTClassifier(nn.Module):
             elif self.image_head is not None:
                 self.echo("Freeze image encoder.")
             if not self.cfg.model.audio.freeze:
+                excl_modules = set(self.cfg.running.excl_modules.amodules)
+                pattern = "|".join([f"^{m}\." for m in excl_modules])
                 tunable_params.update({
                     f"audio_head.{k}": v for k, v in self.audio_head.named_parameters()
-                })
+                if pattern == "" or not re.match(pattern, k)}) # filter out excluded parameters
+                self.echo(f"Tune audio encoder (excl. {excl_modules}).")
             else:
                 self.echo("Freeze audio encoder.")
             self.cuda(self.cfg.rank)
