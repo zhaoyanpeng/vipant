@@ -7,6 +7,7 @@ label_map: "ontology,eval_segments"
 data_name: 'npz_train_toy' #'src_train_toy' #
 eval_name: 'npz_eval_toy' #'src_eval_toy' #
 test_name: 'npz_eval_toy' #'src_eval_toy' #
+train_samples: 1. # fraction
 eval_samples: 250 
 test_samples: 250
 peep_rate: 1 

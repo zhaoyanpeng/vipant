@@ -36,14 +36,15 @@ class CVALPDP(nn.Module):
         # how to asynchronize the two `data_parallel` 
         kwargs = {"normalized": self.loss_head.normalized, "names": kwargs.get("names", None)}
         image_features = audio_features = text_features = None
-        if images is not None and self.image_head is not None:
+        dummy_image = list(images.shape[1:]) == [1, 1, 1]
+        if images is not None and self.image_head is not None and not dummy_image:
             image_features = data_parallel(
                 self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
             )
         elif images is not None: # pre-computed unnormalized features
-            if self.loss_head.normalized:
+            if self.loss_head.normalized and not dummy_image:
                 images = images / images.norm(dim=-1, keepdim=True)
-            image_features = images
+            image_features = images # dummy images will be ignored
         if audios is not None and self.audio_head is not None:
             audio_features = data_parallel(
                 self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
@@ -131,7 +132,7 @@ class CVALPDP(nn.Module):
             n_o, o_n = self.image_head.copy_state_dict(image_head_sd)
             msg = f" except {n_o}" if len(n_o) > 0 else ""
             self.echo(f"Initialize image encoder from `image_head`{msg}.")
-        if self.cfg.running.frame_emb is not None:
+        if self.cfg.running.frame_emb is not None or not self.running.imagine:
             self.image_head = None
             self.echo("Destory image encoder.")
         scfg = self.cfg.running.siamese

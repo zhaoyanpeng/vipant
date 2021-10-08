@@ -50,6 +50,11 @@ class AudioCapDatasetSrc(data.Dataset):
                 self.dataset.append(record) 
                 if not train and iline + 1 == cfg.eval_samples:
                     break
+        if train and cfg.train_samples > 0. and cfg.train_samples < 1.:
+            k = int(len(self.dataset) * cfg.train_samples)
+            #self.dataset = np.random.choice(self.dataset, k, replace=False)
+            shuffled_indice = np.random.permutation(np.random.permutation(len(self.dataset)))
+            self.dataset = [self.dataset[i] for i in shuffled_indice[:k]]
         self.length = len(self.dataset)
         self.audio_norms = cfg.audio.norms
         self.aclip_key = "clip" if "clip" in self.dataset[0] else "aclip"

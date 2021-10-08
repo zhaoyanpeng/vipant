@@ -50,13 +50,13 @@ class ASTClassifier(nn.Module):
         loss = self.loss_head(audio_features, labels, x3=image_features, **kwargs)
         return loss     
     
-    def encode_image(self, image, *args, device_ids=[0], **kwargs):
+    def encode_image(self, images, *args, device_ids=[0], **kwargs):
         image_features = data_parallel(
             self.image_head, images, device_ids=device_ids, module_kwargs=kwargs
         )
         return image_features
     
-    def encode_audio(self, audio, *args, device_ids=[0], **kwargs):
+    def encode_audio(self, audios, *args, device_ids=[0], **kwargs):
         audio_features = data_parallel(
             self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
         )
@@ -89,7 +89,7 @@ class ASTClassifier(nn.Module):
             from_scratch, image_head_sd, text_head_sd, _ = load_clip(None, self.cfg, self.echo)
 
             self.image_head = build_image_head(self.cfg.model.image)
-            if not from_scratch:
+            if not from_scratch and self.cfg.running.imagine:
                 self.image_head.copy_state_dict(image_head_sd)
                 self.echo("Initialize image encoder from `image_head`.")
             else:

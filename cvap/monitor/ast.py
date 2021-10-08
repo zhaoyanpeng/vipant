@@ -12,6 +12,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, MultiStepLR
 
 from ..util import numel, AverageMeter
 from ..model import ASTClassifier as Model
@@ -59,6 +60,34 @@ class Monitor(object):
         sos = torch.cat(sos_list, 0).mean(axis=[0])
         std = (sos - som ** 2).sqrt()
         self.echo(f"MEAN: {som.cpu().tolist()} STD: {std.cpu().tolist()}")
+
+    def encode_audios(self):
+        rcfg = self.cfg.running
+        model_file = "bimodal_00071478" #cfg.model_file
+        audio_root = f"{rcfg.data_root}/{model_file}"
+        if not os.path.exists(audio_root):
+            os.makedirs(audio_root)
+        def save_npz(names, audios=None):
+            for i, name in enumerate(names):
+                np.savez_compressed(
+                    f"{audio_root}/{name}", v=audios[i]
+                )
+        self.echo(f"Encode audios ({len(self.dataloader)} batches)...to `{audio_root}`")
+        nsample = 0
+        start_time = time.time()
+        device_ids = [i for i in range(self.cfg.num_gpus)]
+        for step, batch in enumerate(self.dataloader):
+            _, audios, _, _, names = self.make_batch(batch)
+
+            audio_features = self.model.encode_audio(audios, device_ids=device_ids)
+            audio_features = audio_features.cpu().numpy()
+
+            save_npz(names, audios=audio_features)
+
+            nsample += audios.shape[0]
+            if (step + 1) % rcfg.peep_rate == 0:
+                self.echo(f"--step {step + 1:08d} {nsample / (time.time() - start_time):.2f} samples/s")
+        self.echo(f"Saving {nsample} audio vectors.")
 
     def build_data(self):
         rcfg = self.cfg.running
@@ -115,6 +144,11 @@ class Monitor(object):
                     )
                 self.echo(f"{report}")
                 return None
+
+            #with torch.no_grad():
+            #    self.encode_audios()
+            #return None
+
             self.echo("Evaluating started...")
             with torch.no_grad():
                 report = self.infer(
@@ -211,9 +245,12 @@ class Monitor(object):
 
             if not self.cfg.optimizer.use_lars and self.cfg.optimizer.batch_sch and not warmup:
                 old_lrs = " ".join([f"{x:.2e}" for x in self.scheduler.get_last_lr()])
+                last_lr = self.scheduler.get_last_lr()
                 self.scheduler.step() # after all warmup is completed
                 if isinstance(self.scheduler, (CosineAnnealingWarmRestarts,)):
                     force_eval = self.scheduler.get_last_lr() == self.scheduler.base_lrs
+                elif isinstance(self.scheduler, (MultiStepLR,)):
+                    force_eval = self.scheduler.get_last_lr() != last_lr
                 #self.echo(f"do step lr {old_lrs}")
 
             self.timeit(all_time, key="model")
