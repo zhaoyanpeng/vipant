@@ -19,6 +19,7 @@ from ..model import ASTClassifier as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_ast_dataloader as build_dataloader
 from ..dataset import build_audioset_label_map as build_label_map
+from ..dataset import build_filter_set
 
 class Monitor(object):
     def __init__(self, cfg, echo, device):
@@ -103,12 +104,16 @@ class Monitor(object):
         #print(all(checksum))
         self.lid2int = lid2int
 
+        filters = build_filter_set(rcfg.data_root, rcfg.filter_set)
+        if filters is not None:
+            self.echo(f"At most {len(filters)} audio clips for training becuase of filtering.")
+
         self.echo(f"Total {len(label_map)} sound classes.")
         data_name = rcfg.eval_name if self.cfg.eval else rcfg.data_name
         _, self.dataloader = build_dataloader(
             self.cfg, data_name, label_map, shuffle=(
                 not self.cfg.eval and not rcfg.audio.eval_norms
-            ), train=(not self.cfg.eval)
+            ), train=(not self.cfg.eval), filters=filters
         )
         self.echo(f"Instantiate main dataloader from `{data_name}': total {len(self.dataloader)} batches.")
         self.gold_file = f"{rcfg.data_root}/{data_name}.csv"

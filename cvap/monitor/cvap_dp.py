@@ -110,6 +110,7 @@ class Monitor(object):
     def make_batch(self, batch):
         images = torch.tensor(batch[0], device=self.device) # (c, h, w)
         audios = torch.tensor(batch[1], device=self.device).unsqueeze(1)
+        #print(images.shape, self.cfg.running.resolution)
         if images.dim() != 2 and images.shape[-1] != self.cfg.running.resolution:
             images = F.interpolate(
                 images,

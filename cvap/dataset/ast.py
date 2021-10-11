@@ -196,7 +196,7 @@ class ASTNpz(data.Dataset):
 class ASTSrc(data.Dataset):
     """ `__getitem__' loads raw file from disk.
     """
-    def __init__(self, cfg, data_name, train, label_map, weighted):
+    def __init__(self, cfg, data_name, train, label_map, weighted, filter_set=None):
         data_path = f"{cfg.data_root}/{data_name}.csv"
         assert os.path.isfile(data_path), f"{data_path} is not a file."
         self.cfg = cfg
@@ -207,6 +207,8 @@ class ASTSrc(data.Dataset):
         with open(data_path, "r") as fr:
             for iline, line in enumerate(fr):
                 record = json.loads(line)
+                if filter_set is not None and record["id"] not in filter_set:
+                    continue # let us skip this sample
                 if cfg.cat_label:
                     self._cat_label(record)
                 self.dataset.append(record) 

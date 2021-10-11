@@ -132,7 +132,7 @@ class CVALPDP(nn.Module):
             n_o, o_n = self.image_head.copy_state_dict(image_head_sd)
             msg = f" except {n_o}" if len(n_o) > 0 else ""
             self.echo(f"Initialize image encoder from `image_head`{msg}.")
-        if self.cfg.running.frame_emb is not None or not self.running.imagine:
+        if self.cfg.running.frame_emb is not None or not self.cfg.running.imagine:
             self.image_head = None
             self.echo("Destory image encoder.")
         scfg = self.cfg.running.siamese

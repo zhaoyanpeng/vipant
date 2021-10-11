@@ -149,13 +149,13 @@ class ImageAudioCollator:
             text, label, name,
         )
 
-def build_ast_dataloader(cfg, data_name, label_map, shuffle=True, train=True):
+def build_ast_dataloader(cfg, data_name, label_map, shuffle=True, train=True, filters=None):
     ddp_mode = torch.distributed.is_initialized()
     rcfg = cfg.running
     weighted = train and rcfg.weighted_sampling
     if data_name.startswith("src"):
         if not rcfg.force_npz:
-            dataset = ASTSrc(rcfg, data_name, train, label_map, weighted)
+            dataset = ASTSrc(rcfg, data_name, train, label_map, weighted, filters)
         else:
             dataset = ASTNpz(rcfg, data_name, train, label_map, weighted)
     elif data_name.startswith("npz"):

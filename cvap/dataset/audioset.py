@@ -30,6 +30,28 @@ from clip import tokenize
 # and contrastive-focused loader in image_audio.py and this file.
 ###
 
+def build_filter_set(data_root, filter_set):
+    try: # filters can be None
+        name, topk = filter_set.split(",")
+        filter_file = f"{data_root}/{name}"
+        if filter_file[-1] == "k":
+            samples_per_label = json.load(open(filter_file, "r"))
+            samples = set()
+            for k, v in samples_per_label.items():
+                samples.update(v)
+        else:
+            topk = int(topk)
+            samples = set()
+            with open(filter_file, "r") as fr:
+                for line in fr:
+                    line = json.loads(line)
+                    k, v = list(line.items())[0]
+                    new_samples = set([name for name, _ in v[:topk]] + [k])
+                    samples.update(new_samples)
+    except Exception as e:
+        samples = None
+    return samples
+
 def collect_ytid(csv_root, csv_list):
     ids = defaultdict(list)
     nrow = 0
