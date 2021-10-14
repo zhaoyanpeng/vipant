@@ -1,0 +1,8 @@
+name: 'VACELossHead'
+layers: []
+scaling: True
+scale_max: null
+vp: True
+va: True
+vv: True 
+aa: False 

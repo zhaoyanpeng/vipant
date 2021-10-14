@@ -17,8 +17,9 @@ import torch.utils.data as data
 import torch.nn.functional as F
 
 from . import PairImageSpectrogramTFRecords
+from .image import ImageTransform
 from .audio import (
-    make_transform, _extract_kaldi_spectrogram
+    make_transform, _extract_kaldi_spectrogram, FbankTransform
 )
 from .image_audio_gs import (
     ImageAudioDatasetNpzGS, ImageAudioDatasetSrcGS
@@ -244,6 +245,73 @@ class ImageAudioDatasetSrc(data.Dataset):
     def __len__(self):
         return self.length
 
+class ImageAudioDatasetSiameseSrc(ImageAudioDatasetSrc):
+    """ create two views of an image (audio).
+        self.cfg.frame_emb is expected to be not None.
+    """
+    def __init__(self, cfg, data_name, train):
+        super().__init__(cfg, data_name, train)
+        self.transform_image = ImageTransform(cfg.resolution)
+        self.transform_audio = None
+        self.transform_fbank = FbankTransform()
+        assert self.cfg.frame_emb is not None, f"`frame_emb` is None"
+
+    def _image2numpy(self, fname):
+        if fname is not None:
+            try:
+                if fname.endswith(".npz"):
+                    images = np.load(fname)
+                    images = [images[key] for key in images.files if len(images[key]) != 0]
+                    idx = np.random.choice(len(images), 1)[0] if self.train else int(np.ceil(len(images) / 2)) - 1
+                    image = images[idx]
+                else:
+                    image = PILImage.open(fname)
+                    images = self.transform_image(image)
+            except Exception as e:
+                h = w = self.cfg.resolution
+                image = PILImage.fromarray(
+                    (np.random.rand(h, w, 3) * 256).astype(np.uint8)
+                )
+                warnings.warn(f"use random image instead because `{e}` {fname}.")
+                images = self.transform_image(image)
+        else:
+            images = (np.array([[[1]]]),) * 2
+        return images
+
+    def _audio2numpy(self, aclip_file):
+        max_audio_len = self.cfg.max_audio_len
+        audio = _extract_kaldi_spectrogram(
+            aclip_file,
+            self.kaldi_params,
+            train=self.train,
+            max_audio_len=max_audio_len,
+            zero_mean_wf=self.cfg.audio.zero_mean_wf,
+            transform_audio=(
+                self.transform_audio if self.train and not self.cfg.audio.eval_norms else None
+            )
+        ) # (..., time, freq)
+
+        npad = max_audio_len - audio.shape[0]
+        if npad > 0:
+            audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
+
+        audios = self.transform_fbank(audio)
+        return audios
+
+    def __getitem__(self, index):
+        name, aclip_file, frame_file, frame_emb_file = self._process_item(index)
+
+        image = self._image2embed(frame_emb_file)
+        images = tuple(x[None] for x in self._image2numpy(frame_file))
+        audios = tuple(x[None] for x in self._audio2numpy(aclip_file))
+
+        item = {
+            "image": image[None], "name": name,
+            "image_v1": images[0], "image_v2": images[1],
+            "audio_v1": audios[0], "audio_v2": audios[1]
+        }
+        return item
+
 class ImageAudioCollator:
     def __init__(self, device=torch.device("cpu")):
         # RuntimeError: cannot pin 'torch.cuda.FloatTensor' only dense CPU tensors can be pinned
@@ -254,11 +322,21 @@ class ImageAudioCollator:
         union = { 
             k: [record.get(k) for record in records] for k in set().union(*records) 
         } 
-        return (
-            np.concatenate(union["image"], axis=0), 
-            np.concatenate(union["audio"], axis=0),
-            union["name"],
-        )
+        if "image_v1" in union:
+            return (
+                np.concatenate(union["image"], axis=0),
+                np.concatenate(union["image_v1"], axis=0),
+                np.concatenate(union["image_v2"], axis=0),
+                np.concatenate(union["audio_v1"], axis=0),
+                np.concatenate(union["audio_v2"], axis=0),
+                union["name"],
+            )
+        else:
+            return (
+                np.concatenate(union["image"], axis=0),
+                np.concatenate(union["audio"], axis=0),
+                union["name"],
+            )
 
 def build_dataloader(cfg, data_name, shuffle=True, train=True):
     ddp_mode = torch.distributed.is_initialized()
@@ -266,7 +344,10 @@ def build_dataloader(cfg, data_name, shuffle=True, train=True):
     from_gs = rcfg.data_root.startswith("gs://")
     if data_name.startswith("src"):
         if not from_gs:
-            dataset = ImageAudioDatasetSrc(rcfg, data_name, train)
+            if not getattr(rcfg, "multi_view", False):
+                dataset = ImageAudioDatasetSrc(rcfg, data_name, train)
+            else:
+                dataset = ImageAudioDatasetSiameseSrc(rcfg, data_name, train)
         else:
             dataset = ImageAudioDatasetSrcGS(rcfg, data_name, train)
     elif data_name.startswith("npz"):

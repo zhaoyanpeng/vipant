@@ -4,7 +4,8 @@ import numpy as np
 from omegaconf.listconfig import ListConfig
 from omegaconf.dictconfig import DictConfig
 
-from torchvision.transforms import Compose, ToTensor
+import torchvision.transforms as transforms
+from torchvision.transforms import Compose, ToTensor, Normalize
 from torchaudio.transforms import FrequencyMasking, TimeMasking
 from .. import AbstractTransform
 
@@ -187,3 +188,30 @@ class SimpleRandomNoise(AbstractTransform):
     def __call__(self, x):
         return self.random_noise(x, self.scale, self.shift, self.p) 
 
+class FbankTransform:
+    def __init__(self):
+        self.transform = transforms.Compose([
+            lambda x: x.T,
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[-4.93839311], std=[5.75751113]
+            ),
+            FrequencyMasking(32),
+            TimeMasking(200),
+            lambda x: x.transpose(-1, -2)
+        ])
+        self.transform_prime = transforms.Compose([
+            lambda x: x.T,
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[-4.93839311], std=[5.75751113]
+            ),
+            FrequencyMasking(48),
+            TimeMasking(300),
+            lambda x: x.transpose(-1, -2)
+        ])
+
+    def __call__(self, x):
+        y1 = self.transform(x)
+        y2 = self.transform_prime(x)
+        return y1, y2
