@@ -1,1 +1,1 @@
-from .transform import ImageTransform
+from .transform import AuthenticCLIPImageTransform, CLIPImageTransform, BarlowImageTransform

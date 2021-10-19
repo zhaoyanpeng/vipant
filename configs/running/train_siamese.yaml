@@ -19,6 +19,7 @@ imagine: True
 embed_dim: ${model.image.embed_dim}
 # vision backbone
 resolution: ${model.image.resolution}
+clip_tf: False
 # audio backbone
 max_audio_len: ${running.audio.max_len}
 num_mel_bins: ${running.audio.num_mel_bins}

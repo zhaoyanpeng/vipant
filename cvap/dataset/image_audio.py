@@ -17,10 +17,10 @@ import torch.utils.data as data
 import torch.nn.functional as F
 
 from . import PairImageSpectrogramTFRecords
-from .image import ImageTransform
 from .audio import (
     make_transform, _extract_kaldi_spectrogram, FbankTransform
 )
+from .image import BarlowImageTransform as ImageTransform
 from .image_audio_gs import (
     ImageAudioDatasetNpzGS, ImageAudioDatasetSrcGS
 )
@@ -250,30 +250,29 @@ class ImageAudioDatasetSiameseSrc(ImageAudioDatasetSrc):
         self.cfg.frame_emb is expected to be not None.
     """
     def __init__(self, cfg, data_name, train):
-        super().__init__(cfg, data_name, train)
-        self.transform_image = ImageTransform(cfg.resolution)
+        super().__init__(cfg.running, data_name, train)
+        self.lcfg = cfg.model.loss
+        assert self.cfg.frame_emb is not None, f"`frame_emb` is None"
+        if not cfg.running.clip_tf:
+            from .image import BarlowImageTransform as ImageTransform
+        else: # use `CLIPImageTransform` to generate multi-view images
+            from .image import CLIPImageTransform as ImageTransform
+            from .image import AuthenticCLIPImageTransform as ImageTransform
+        self.transform_image = ImageTransform(self.cfg.resolution)
         self.transform_audio = None
         self.transform_fbank = FbankTransform()
-        assert self.cfg.frame_emb is not None, f"`frame_emb` is None"
 
     def _image2numpy(self, fname):
         if fname is not None:
             try:
-                if fname.endswith(".npz"):
-                    images = np.load(fname)
-                    images = [images[key] for key in images.files if len(images[key]) != 0]
-                    idx = np.random.choice(len(images), 1)[0] if self.train else int(np.ceil(len(images) / 2)) - 1
-                    image = images[idx]
-                else:
-                    image = PILImage.open(fname)
-                    images = self.transform_image(image)
+                image = PILImage.open(fname)
             except Exception as e:
                 h = w = self.cfg.resolution
                 image = PILImage.fromarray(
                     (np.random.rand(h, w, 3) * 256).astype(np.uint8)
                 )
                 warnings.warn(f"use random image instead because `{e}` {fname}.")
-                images = self.transform_image(image)
+            images = self.transform_image(image, self.lcfg.vv, self.train)
         else:
             images = (np.array([[[1]]]),) * 2
         return images
@@ -295,15 +294,32 @@ class ImageAudioDatasetSiameseSrc(ImageAudioDatasetSrc):
         if npad > 0:
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
 
-        audios = self.transform_fbank(audio)
+        """
+        if not self.cfg.audio.eval_norms and len(self.audio_norms) == 2:
+            mean, std = self.audio_norms
+            audio = (audio - mean) / std
+
+        #if self.train and self.transform_fbank is not None:
+        if not self.cfg.audio.eval_norms and self.train and self.transform_fbank is not None:
+            audio = self.transform_fbank(audio)
+        return audio[None], np.array([[[1]]])
+        """
+
+        audios = self.transform_fbank(audio, self.lcfg.aa, self.train)
         return audios
 
     def __getitem__(self, index):
         name, aclip_file, frame_file, frame_emb_file = self._process_item(index)
 
-        image = self._image2embed(frame_emb_file)
+        image = self._image2embed(frame_emb_file) if self.lcfg.vp else np.array([[[1]]])
         images = tuple(x[None] for x in self._image2numpy(frame_file))
         audios = tuple(x[None] for x in self._audio2numpy(aclip_file))
+
+        #image = np.array([[[1]]])
+        #images = (self._image2numpy(frame_file), np.array([[[1]]]))
+        #images = tuple(x[None] for x in images)
+        #audios = (self._audio2numpy(aclip_file)[None], np.array([[[1]]]))
+        #audios = tuple(x[None] for x in audios)
 
         item = {
             "image": image[None], "name": name,
@@ -347,7 +363,7 @@ def build_dataloader(cfg, data_name, shuffle=True, train=True):
             if not getattr(rcfg, "multi_view", False):
                 dataset = ImageAudioDatasetSrc(rcfg, data_name, train)
             else:
-                dataset = ImageAudioDatasetSiameseSrc(rcfg, data_name, train)
+                dataset = ImageAudioDatasetSiameseSrc(cfg, data_name, train)
         else:
             dataset = ImageAudioDatasetSrcGS(rcfg, data_name, train)
     elif data_name.startswith("npz"):

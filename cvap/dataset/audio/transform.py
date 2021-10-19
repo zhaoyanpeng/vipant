@@ -196,8 +196,8 @@ class FbankTransform:
             transforms.Normalize(
                 mean=[-4.93839311], std=[5.75751113]
             ),
-            FrequencyMasking(32),
-            TimeMasking(200),
+            FrequencyMasking(48),
+            TimeMasking(300),
             lambda x: x.transpose(-1, -2)
         ])
         self.transform_prime = transforms.Compose([
@@ -206,12 +206,21 @@ class FbankTransform:
             transforms.Normalize(
                 mean=[-4.93839311], std=[5.75751113]
             ),
-            FrequencyMasking(48),
-            TimeMasking(300),
+            FrequencyMasking(32),
+            TimeMasking(200),
             lambda x: x.transpose(-1, -2)
         ])
+        self.transform_eval = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[-4.93839311], std=[5.75751113]
+            ),
+        ])
 
-    def __call__(self, x):
-        y1 = self.transform(x)
-        y2 = self.transform_prime(x)
-        return y1, y2
+    def __call__(self, x, both, train):
+        if not train:
+            return self.transform_eval(x), np.array([[[1]]])
+        else:
+            y1 = self.transform_prime(x)
+            y2 = self.transform(x) if both else np.array([[[1]]])
+            return y1, y2

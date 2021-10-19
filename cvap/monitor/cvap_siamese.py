@@ -14,19 +14,20 @@ from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 
-from .cvap_dp import Monitor as BaseMonitor
+from .cvap_dp import Monitor
 from ..util import numel
 from ..model import build_main_model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_dataloader 
 
-class Monitor(BaseMonitor):
+class Monitor(Monitor):
     def __init__(self, cfg, echo, device):
         super(Monitor, self).__init__(cfg, echo, device)
 
     def make_batch(self, batch):
         def scale_images(images):
-            if images.dim() != 2 and images.shape[-1] != self.cfg.running.resolution:
+            if images.dim() != 2 and images.shape[-1] != self.cfg.running.resolution and \
+                list(images.shape[1:]) != [1, 1, 1]:
                 images = F.interpolate(
                     images,
                     self.cfg.running.resolution,
@@ -34,9 +35,8 @@ class Monitor(BaseMonitor):
                     align_corners=False,
                 )
             return images
-        images = scale_images(
-            torch.tensor(batch[0], device=self.device) # (c, h, w)
-        ) if self.cfg.model.loss.vp else None
+        #print(batch[0].shape, batch[1].shape, batch[2].shape, batch[3].shape, batch[4].shape)
+        images = torch.tensor(batch[0], device=self.device) if self.cfg.model.loss.vp else None
         images_v1 = scale_images(
             torch.tensor(batch[1], device=self.device) # (c, h, w)
         )
@@ -45,7 +45,16 @@ class Monitor(BaseMonitor):
         ) if self.cfg.model.loss.vv else None
         audios_v1 = torch.tensor(batch[3], device=self.device)
         audios_v2 = torch.tensor(batch[4], device=self.device) if self.cfg.model.loss.aa else None
-        #print(images.shape, self.cfg.running.resolution, images_v1.shape, images_v2.shape, audios_v1.shape)
+        """
+        print(
+            images.shape if images is not None else None,
+            self.cfg.running.resolution,
+            images_v1.shape,
+            images_v2.shape if images_v2 is not None else None,
+            audios_v1.shape,
+            audios_v2.shape if audios_v2 is not None else None,
+        )
+        """
         #import sys; sys.exit(0)
         batch = (
             images, images_v1, images_v2, audios_v1, audios_v2, batch[-1], # sample id or name
