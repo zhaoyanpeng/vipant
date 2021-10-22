@@ -98,18 +98,19 @@ class CVALPDP(nn.Module):
     def build(self, **kwargs):
         tunable_params = dict()
         if self.cfg.eval:
-            local_cfg, image_head_sd, audio_head_sd, text_head_sd, loss_head_sd = load_checkpoint(self.cfg, self.echo)
+            local_cfg, _, audio_head_sd, _, loss_head_sd = load_checkpoint(self.cfg, self.echo)
+            from_scratch, image_head_sd, text_head_sd, _ = load_clip(None, self.cfg, self.echo)
             
-            self.image_head = build_image_head(local_cfg.model.image)
-            self.image_head.load_state_dict(image_head_sd)
+            self.image_head = build_image_head(self.cfg.model.image)
+            self.image_head.copy_state_dict(image_head_sd)
 
-            self.audio_head = build_audio_head(local_cfg.model.audio)
+            self.audio_head = build_audio_head(self.cfg.model.audio)
             self.audio_head.load_state_dict(audio_head_sd)
 
-            self.text_head = build_text_head(local_cfg.model.text) 
-            self.text_head.load_state_dict(text_head_sd)
+            self.text_head = build_text_head(self.cfg.model.text)
+            self.text_head.copy_state_dict(text_head_sd)
 
-            self.loss_head = build_loss_head(local_cfg.model.loss, **kwargs)
+            self.loss_head = build_loss_head(self.cfg.model.loss, **kwargs)
             self.loss_head.load_state_dict(loss_head_sd)
 
             self.cuda(self.cfg.rank) 

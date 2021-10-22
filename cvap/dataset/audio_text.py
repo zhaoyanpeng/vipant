@@ -35,6 +35,7 @@ class AudioTextDatasetSrc(data.Dataset):
         self.train = train
         self.cfg = cfg
         
+        self.aclip_key = "clip" if "clip" in self.dataset[0] else "aclip"
         acfg = cfg.audio
         self.transform_audio, self.transform_fbank = make_transform(acfg)        
         self.kaldi_params = {
@@ -49,51 +50,53 @@ class AudioTextDatasetSrc(data.Dataset):
     def _shuffle(self):
         pass
 
-    def __getitem__(self, index):
-        akey = "aclip"
-        name = self.dataset[index]["id"]
-        sub_dir = self.dataset[index]["dir"]
-        label_str = self.dataset[index]["label_str"] 
-        label_int = self.dataset[index]["label_int_bpe"] 
-        aclip = self.dataset[index][akey][0]
-
-        sub_dir = "" if len(sub_dir) == 0 else f"{sub_dir}/"
-        aclip = aclip if aclip == name else f"{akey}/{name}.{aclip}"
-        aclip_file = f"{self.cfg.data_root}/{sub_dir}{aclip}"
-
+    def _audio2numpy_cst(self, aclip_file):
         max_audio_len = self.cfg.max_audio_len
         audio = _extract_kaldi_spectrogram(
             aclip_file,
             self.kaldi_params,
             train=self.train,
             max_audio_len=max_audio_len,
+            zero_mean_wf=self.cfg.audio.zero_mean_wf,
             transform_audio=(
                 self.transform_audio if self.train and not self.cfg.audio.eval_norms else None
             )
         ) # (..., time, freq)
-        
+
         npad = max_audio_len - audio.shape[0]
-        if npad > 0: # always pad to the right
+        if npad > 0:
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
+        return audio
+
+    def __getitem__(self, index):
+        akey = self.aclip_key
+        name = self.dataset[index]["id"]
+        sub_dir = self.dataset[index]["dir"]
+        label_str = self.dataset[index]["label_str"]
+        label_int = self.dataset[index]["label_int_bpe"]
+        aclip = self.dataset[index][akey][0]
+
+        sub_dir = "" if len(sub_dir) == 0 else f"{sub_dir}/"
+        aclip = aclip if aclip == name else f"{akey}/{name}.{aclip}"
+        aclip_file = f"{self.cfg.data_root}/{sub_dir}{aclip}"
+
+        audio = self._audio2numpy_cst(aclip_file)
 
         if not self.cfg.audio.eval_norms and len(self.audio_norms) == 2:
             mean, std = self.audio_norms
-            audio = (audio - mean) / (std * 2)
+            audio = (audio - mean) / std
 
         #if self.train and self.transform_fbank is not None:
         if not self.cfg.audio.eval_norms and self.train and self.transform_fbank is not None:
             audio = self.transform_fbank(audio)
-        
-        audio = audio[None]
 
         if self.train:
             idx = np.random.choice(len(label_int), 1)[0]
             text = label_int[idx]
-            #name = label_str[idx]
         else:
             text = label_int
-            #name = label_str
 
+        audio = audio[None]
         item = {"audio": audio, "text": text, "name": name}
         return item 
 
@@ -168,12 +171,14 @@ def build_clotho_data_list(cfg, data_name):
     fold = data_name.rsplit("_", 1)[-1] # {development, validation, evaluation} 
     data_path = f"{cfg.data_root}/{data_name}.csv"
     assert os.path.isfile(data_path), f"{data_path} is not a file."
+    prompt = cfg.prompt.strip()
+    prompt = "" if len(prompt) == 0 else f"{prompt} "
     dataset = list()
     with open(data_path, "r") as fr:
         meta = csv.DictReader(fr)
         for i, row in enumerate(meta):
             filename = row["file_name"]
-            captions = [row[f"caption_{icap}"] for icap in range(1, 6)]
+            captions = [prompt + row[f"caption_{icap}"] for icap in range(1, 6)]
             label_int_bpe = tokenize(captions, as_list=True)
             item = {
                 "id": filename,
@@ -192,19 +197,22 @@ def build_clotho_data_list(cfg, data_name):
 def build_audiocaps_data_list(cfg, data_name):
     data_path = f"{cfg.data_root}/{data_name}.csv"
     assert os.path.isfile(data_path), f"{data_path} is not a file."
+    prompt = cfg.prompt.strip()
+    prompt = "" if len(prompt) == 0 else f"{prompt} "
     dataset = list()
     with open(data_path, "r") as fr:
         for iline, line in enumerate(fr):
             record = json.loads(line)
+            captions = [prompt + caption for caption in record["captions"]]
             record["label_int_w2v"] = []
             record["label_int_bpe"] = tokenize(
-                record["captions"], as_list=True
+                captions, as_list=True
             ) # add bpe captions
-            record["label_str"] = record.pop("captions")
+            record["label_str"] = captions
             dataset.append(record)
             if iline > 10:
                 pass #break
-        #print(dataset)
+        print(dataset[:2])
     return dataset
 
 def build_dataloader_clotho(cfg, data_name, shuffle=True, train=True):
@@ -229,6 +237,8 @@ def build_audio_text_dataloader(cfg, data_name, *args, shuffle=True, train=True,
             cfg, data_name, shuffle=shuffle, train=train
         )
     elif data_name.startswith("audiocaps"):
+        #from .audioset import build_audioset_dataloader
+        #return build_audioset_dataloader(cfg, data_name, dict(), shuffle=shuffle, train=train)
         return build_dataloader_audiocaps(
             cfg, data_name, shuffle=shuffle, train=train
         )

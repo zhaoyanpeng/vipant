@@ -258,7 +258,8 @@ class CELossHead(LossHead):
     def copy_state_dict(self, state_dict): 
         key = "logit_scale"
         new_dict = self.state_dict()
-        new_dict.update({key: state_dict[key]})
+        if key in new_dict and key in state_dict:
+            new_dict.update({key: state_dict[key]})
         self.load_state_dict(new_dict)
 
     def forward(self, x1, x2, *args, **kwargs):
@@ -511,6 +512,7 @@ class VACELossHead(LossHead):
         if cfg.aa: # audio -> audio
             self.loss_head_aa = CELossHead(cfg, **kwargs)
             self._total_loss.update({"aa": 0.})
+        self.vp_w, self.va_w, self.vv_w, self.aa_w = cfg.vp_w, cfg.va_w, cfg.vv_w, cfg.aa_w
 
     def copy_state_dict(self, state_dict):
         pass
@@ -579,7 +581,7 @@ class VACELossHead(LossHead):
             loss_aa = self.loss_head_aa(audios_v1, audios_v2, *args, **kwargs)
             self._total_loss["aa"] += loss_aa.detach()
 
-        loss = loss_vp + loss_va + loss_vv + loss_aa
+        loss = self.vp_w * loss_vp + self.va_w * loss_va + self.vv_w * loss_vv + self.aa_w * loss_aa
         return loss
 
 @LOSS_HEADS_REGISTRY.register()

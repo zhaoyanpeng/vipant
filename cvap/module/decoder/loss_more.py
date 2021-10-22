@@ -370,7 +370,8 @@ class LMLossHead(LossHead):
     def copy_state_dict(self, state_dict):
         key = "logit_scale"
         new_dict = self.state_dict()
-        new_dict.update({key: state_dict[key]})
+        if key in new_dict and key in state_dict:
+            new_dict.update({key: state_dict[key]})
         self.load_state_dict(new_dict)
 
     def infer(self, x1, x2, x3, *args, **kwargs):

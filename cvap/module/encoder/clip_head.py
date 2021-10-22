@@ -178,6 +178,11 @@ class CLIPAudioHead(MetaHead):
         old_pos_shape = position_resolution(
             cfg.model.audio.resolution, cfg.model.audio.pre_encoder.patch_size, cfg.model.audio.pre_encoder.stride
         ) # nrow always indicates the time dimenstion
+        #print(new_dict[key].shape, state_dict[key].shape, new_pos_shape, old_pos_shape)
+        if state_dict[key].shape[0] in {50, 197}: # from vision encoder TODO could be wrong
+            state_dict[key] = interp_clip_vp_embedding(
+                state_dict.pop(key), new_pos_shape, old_pos_resolution=old_pos_shape
+            ) # pos embed inherited from vision encoder
         n_o, o_n = load_pos_embedding(
             state_dict, old_dict, new_dict, key, 1, old_pos_shape, new_pos_shape
         )

@@ -1,6 +1,7 @@
 clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
 clip_model_name: "ViT-B32"
 data_root: "/home/yanpengz/data/clotho"
+prompt: "the sound of"
 data_name: 'clotho_captions_development' 
 eval_name: 'clotho_captions_validation'
 test_name: 'clotho_captions_evaluation' 
@@ -20,3 +21,9 @@ resolution: ${model.image.resolution}
 # audio backbone
 max_audio_len: ${running.audio.max_len}
 num_mel_bins: ${running.audio.num_mel_bins}
+
+# unused but to be compatible w/ audioset_cap.py
+frame_key: "frame"
+frame_emb: null
+clf: False
+weighted_sampling: False

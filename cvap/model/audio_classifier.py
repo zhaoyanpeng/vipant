@@ -112,6 +112,7 @@ class AudioClassifier(nn.Module):
             self.echo(f"Initialize text encoder from `text_head`{msg}.")
 
             self.loss_head = build_loss_head(self.cfg.model.loss, **kwargs)
+            self.loss_head.load_state_dict(loss_head_sd) #
 
             self.cuda(self.cfg.rank) 
         else:

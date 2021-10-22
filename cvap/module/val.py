@@ -512,7 +512,7 @@ class ResidualAttentionBlock(nn.Module):
         x = x + self.mlp(self.ln_2(x))
         return x
 
-def interp_clip_vp_embedding(old_pos_emb, pos_resolution, bop=1):
+def interp_clip_vp_embedding(old_pos_emb, pos_resolution, old_pos_resolution=None, bop=1):
     """ vp: stands for `visual positional`
         bop: start position of the postional embeddings
         old_pos_emb: (H x W + 1, D)
@@ -524,10 +524,13 @@ def interp_clip_vp_embedding(old_pos_emb, pos_resolution, bop=1):
     # FIXME adhoc: the condition of not sharing may be wrong.
     if num_pos_required + 1 == num_pos:
         return old_pos_emb
-    # old_pos_emb must be vision pos if sharing pos between vision and audio
-    num_pos = int(np.sqrt(num_pos - bop))
+    if old_pos_resolution is None:
+        # old_pos_emb must be vision pos if sharing pos between vision and audio
+        h = w = int(np.sqrt(num_pos - bop))
+    else: # should have fixed the TODO
+        h, w = old_pos_resolution
     ptensor = old_pos_emb[bop:].reshape(
-        -1, num_pos, num_pos, pos_dim
+        -1, h, w, pos_dim
     ).permute(0, 3, 1, 2)
     if ptensor.shape[-2:] != pos_resolution:
         new_pos_emb = F.interpolate(

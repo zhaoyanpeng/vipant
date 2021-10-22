@@ -37,5 +37,9 @@ __pycache__
 .coverage
 .pytest_cache/
 
+csv
+logs
+data
+scripts
 outputs
 configs/ai2-alexandria-fbf4c720d4a4.json
