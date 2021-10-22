@@ -36,7 +36,9 @@ class Monitor(Monitor):
                 )
             return images
         #print(batch[0].shape, batch[1].shape, batch[2].shape, batch[3].shape, batch[4].shape)
-        images = torch.tensor(batch[0], device=self.device) if self.cfg.model.loss.vp else None
+        images = (torch.tensor(batch[0], device=self.device)
+            if self.cfg.model.loss.vp or self.cfg.model.loss.ap else None
+        )
         images_v1 = scale_images(
             torch.tensor(batch[1], device=self.device) # (c, h, w)
         )
@@ -44,7 +46,9 @@ class Monitor(Monitor):
             torch.tensor(batch[2], device=self.device) # (c, h, w)
         ) if self.cfg.model.loss.vv else None
         audios_v1 = torch.tensor(batch[3], device=self.device)
-        audios_v2 = torch.tensor(batch[4], device=self.device) if self.cfg.model.loss.aa else None
+        audios_v2 = (torch.tensor(batch[4], device=self.device)
+            if self.cfg.model.loss.aa else None
+        )
         """
         print(
             images.shape if images is not None else None,

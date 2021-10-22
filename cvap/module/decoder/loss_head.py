@@ -498,29 +498,34 @@ class VALCELossHead(LossHead):
 class VACELossHead(LossHead):
     def __init__(self, cfg, **kwargs):
         super().__init__()
-        self.loss_head_vp = self.loss_head_va = self.loss_head_vv = self.loss_head_aa = None
+        self.loss_head_vp = self.loss_head_ap = self.loss_head_va = self.loss_head_vv = self.loss_head_aa = None
         self._total_loss = {} # record loss
         if cfg.vp: # vision -> prime (`gold` image features)
             self.loss_head_vp = CELossHead(cfg, **kwargs)
             self._total_loss.update({"vp": 0.})
+        if cfg.ap: # audio  -> prime (`gold` image features)
+            self.loss_head_ap = CELossHead(cfg, **kwargs)
+            self._total_loss.update({"ap": 0.})
         if cfg.va: # vision -> audio
             self.loss_head_va = CELossHead(cfg, **kwargs)
             self._total_loss.update({"va": 0.})
         if cfg.vv: # vision -> vision
             self.loss_head_vv = CELossHead(cfg, **kwargs)
             self._total_loss.update({"vv": 0.})
-        if cfg.aa: # audio -> audio
+        if cfg.aa: # audio  -> audio
             self.loss_head_aa = CELossHead(cfg, **kwargs)
             self._total_loss.update({"aa": 0.})
-        self.vp_w, self.va_w, self.vv_w, self.aa_w = cfg.vp_w, cfg.va_w, cfg.vv_w, cfg.aa_w
+        self.vp_w, self.ap_w, self.va_w, self.vv_w, self.aa_w = cfg.vp_w, cfg.ap_w, cfg.va_w, cfg.vv_w, cfg.aa_w
 
     def copy_state_dict(self, state_dict):
         pass
 
     def infer(self, images, images_v1, audios_v1, images_v2=None, audios_v2=None, *args, **kwargs):
-        loss_vp = loss_va = loss_vv = loss_aa = 0.
+        loss_vp = loss_ap = loss_va = loss_vv = loss_aa = 0.
         if images is not None and images_v1 is not None and self.loss_head_vp is not None:
             loss_vp = self.loss_head_vp.infer(images_v1, images, *args, **kwargs)
+        if images is not None and audios_v1 is not None and self.loss_head_ap is not None:
+            loss_ap = self.loss_head_ap.infer(audios_v1, images, *args, **kwargs)
         if images_v1 is not None and audios_v1 is not None and self.loss_head_va is not None:
             loss_va = self.loss_head_va.infer(images_v1, audios_v1, *args, **kwargs)
         if images_v1 is not None and images_v2 is not None and self.loss_head_vv is not None:
@@ -528,10 +533,11 @@ class VACELossHead(LossHead):
         if audios_v1 is not None and audios_v2 is not None and self.loss_head_aa is not None:
             loss_aa = self.loss_head_aa.infer(audios_v1, audios_v2, *args, **kwargs)
         loss_vp = loss_vp or 0.
+        loss_ap = loss_ap or 0.
         loss_va = loss_va or 0.
         loss_vv = loss_vv or 0.
         loss_aa = loss_aa or 0.
-        return loss_vp + loss_va + loss_vv + loss_aa
+        return loss_vp + loss_ap + loss_va + loss_vv + loss_aa
 
     def stats(self, nstep=1, **kwargs):
         msg = " ".join([
@@ -544,6 +550,10 @@ class VACELossHead(LossHead):
         if self.loss_head_vp is not None and hasattr(self.loss_head_vp, "x1s"):
             report_list.append(
                 "VP: " + self.loss_head_vp.report(gold_file)
+            )
+        if self.loss_head_ap is not None and hasattr(self.loss_head_ap, "x1s"):
+            report_list.append(
+                "AP: " + self.loss_head_ap.report(gold_file)
             )
         if self.loss_head_va is not None and hasattr(self.loss_head_va, "x1s"):
             report_list.append(
@@ -567,10 +577,13 @@ class VACELossHead(LossHead):
                 )
             return None
 
-        loss_vp = loss_va = loss_vv = loss_aa = 0.
+        loss_vp = loss_ap = loss_va = loss_vv = loss_aa = 0.
         if images is not None and images_v1 is not None and self.loss_head_vp is not None:
-            loss_vp = self.loss_head_vp(images, images_v1, *args, **kwargs)
+            loss_vp = self.loss_head_vp(images_v1, images, *args, **kwargs)
             self._total_loss["vp"] += loss_vp.detach()
+        if images is not None and audios_v1 is not None and self.loss_head_ap is not None:
+            loss_ap = self.loss_head_ap(audios_v1, images, *args, **kwargs)
+            self._total_loss["ap"] += loss_ap.detach()
         if images_v1 is not None and audios_v1 is not None and self.loss_head_va is not None:
             loss_va = self.loss_head_va(images_v1, audios_v1, *args, **kwargs)
             self._total_loss["va"] += loss_va.detach()
@@ -581,7 +594,7 @@ class VACELossHead(LossHead):
             loss_aa = self.loss_head_aa(audios_v1, audios_v2, *args, **kwargs)
             self._total_loss["aa"] += loss_aa.detach()
 
-        loss = self.vp_w * loss_vp + self.va_w * loss_va + self.vv_w * loss_vv + self.aa_w * loss_aa
+        loss = self.vp_w * loss_vp + self.ap_w * loss_ap + self.va_w * loss_va + self.vv_w * loss_vv + self.aa_w * loss_aa
         return loss
 
 @LOSS_HEADS_REGISTRY.register()

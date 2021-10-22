@@ -311,7 +311,7 @@ class ImageAudioDatasetSiameseSrc(ImageAudioDatasetSrc):
     def __getitem__(self, index):
         name, aclip_file, frame_file, frame_emb_file = self._process_item(index)
 
-        image = self._image2embed(frame_emb_file) if self.lcfg.vp else np.array([[[1]]])
+        image = self._image2embed(frame_emb_file) if self.lcfg.vp or self.lcfg.ap else np.array([[[1]]])
         images = tuple(x[None] for x in self._image2numpy(frame_file))
         audios = tuple(x[None] for x in self._audio2numpy(aclip_file))
 
