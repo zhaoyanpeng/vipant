@@ -5,15 +5,16 @@ from collections import OrderedDict
 
 from clip import load 
 
-__all__ = ["load_checkpoint", "load_clip", "load_meme"]
+__all__ = ["load_checkpoint", "load_clip", "load_meme", "extract_model_file"]
 
 def load_checkpoint(cfg, echo):
     model_file = f"{cfg.model_root}/{cfg.model_name}/{cfg.model_file}"
-    if not os.path.isfile(model_file):
+    try:
+        checkpoint = torch.load(model_file, map_location="cpu")
+        echo(f"Loading from {model_file}")
+    except Exception as e:
         echo(f"Failed to load the checkpoint `{model_file}`")
         return (None,) * 5
-    echo(f"Loading from {model_file}")
-    checkpoint = torch.load(model_file, map_location="cpu")
     local_cfg = checkpoint["cfg"]
     local_str = OmegaConf.to_yaml(local_cfg)
     if cfg.verbose:
@@ -44,7 +45,7 @@ def load_clip(local_cfg, cfg, echo):
         from_scratch = False
     except Exception as e:
         echo(f"Will learn from scratch because: {e}") 
-        image_head_sd = text_head_sd = None 
+        model = image_head_sd = text_head_sd = None
         from_scratch = True
     return from_scratch, image_head_sd, text_head_sd, model 
 
@@ -60,3 +61,17 @@ def load_meme(cfg, echo):
         image_head_sd = None 
         with_meme = False 
     return with_meme, image_head_sd
+
+def extract_model_file(cfg, echo):
+    model_files = list()
+    log_file = f"{cfg.model_root}/{cfg.model_name}/{cfg.model_file}"
+    try:
+        pattern = '.?Saving the checkpoint to.*\/([0-9]+\.pth)'
+        with open(log_file, "r") as fr:
+            for line in fr:
+                ret = re.search(pattern, line)
+                if ret is not None:
+                    model_files.append(ret.groups(0)[0])
+    except Exception as e:
+        echo(f"Failed to extract model files from `{log_file}`")
+    return model_files

@@ -16,6 +16,7 @@ import torch.distributed as dist
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
+from ..model import extract_model_file
 from ..model import AudioClassifier as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset.audio import build_dataloader_list
@@ -28,6 +29,10 @@ class Monitor(object):
         self.device = device
         output_dim = self.build_data()
         model = Model(cfg, echo)
+        if cfg.eval and cfg.model_file.endswith(".out"):
+            self.model = model
+            self.model.train(not cfg.eval)
+            return #
         tunable_params = model.build(**{"output_dim": output_dim})
         self.model = DistributedDataParallel(
             model, device_ids=[cfg.rank], find_unused_parameters=True
@@ -54,9 +59,13 @@ class Monitor(object):
         if not self.model.training:
             if self.cfg.running.zero_shot:
                 self.echo("(Zero-shot) Evaluating started...")
-                with torch.no_grad():
-                    report = self.standard_zero_shot() #self.zero_shot() #
-                self.echo(f"{report}")
+                if self.cfg.model_file.endswith(".out"):
+                    with torch.no_grad():
+                        self.repeated_zero_shot() # multiple evaluations
+                else:
+                    with torch.no_grad():
+                        report = self.standard_zero_shot() #self.zero_shot() #
+                    self.echo(f"{report}")
                 return None
             self.echo("Evaluating started...")
             with torch.no_grad():
@@ -290,6 +299,18 @@ class Monitor(object):
         precision = float(precision.group(1))
         report_by_fold.append(precision)
         return f"{precision:2.2f} for zero-shot classification."
+
+    def repeated_zero_shot(self):
+        self.echo("Evaluate multiple checkpoints.")
+        model_files = extract_model_file(self.cfg, self.echo)
+        for model_file in model_files:
+            self.cfg.model_file = model_file # modify the global
+            output_dim = len(self.lid2str)
+            tunable_params = self.model.build(**{"output_dim": output_dim})
+            self.model.train(not self.cfg.eval)
+
+            report = self.standard_zero_shot()
+            self.echo(f"{report}")
 
     def save(self):
         fsave = f"{self.cfg.model_root}/{self.cfg.model_name}/{self.total_step:08d}.pth"

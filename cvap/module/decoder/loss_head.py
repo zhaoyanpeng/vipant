@@ -343,9 +343,9 @@ class ClassificationHead(LossHead):
         self.reduce = False 
     
     def copy_state_dict(self, state_dict): 
-        key = "logit_scale"
         new_dict = self.state_dict()
-        new_dict.update({key: state_dict[key]})
+        old_dict = {k: v for k, v in state_dict.items() if k in new_dict}
+        new_dict.update(old_dict)
         self.load_state_dict(new_dict)
 
     def infer(self, x1, x2, *args, **kwargs):
