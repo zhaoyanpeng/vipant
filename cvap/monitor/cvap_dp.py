@@ -15,7 +15,7 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 
 from ..util import numel
-from ..model import build_main_model
+from ..model import build_main_model, extract_model_file
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_dataloader 
 
@@ -30,6 +30,10 @@ class Monitor(object):
             self.eval_norms()
             return # mean & std of the data
         model = build_main_model(cfg, echo)
+        if cfg.eval and cfg.model_file.endswith(".out"):
+            self.model = model
+            self.model.train(not cfg.eval)
+            return #
         tunable_params = model.build()
         self.model = DistributedDataParallel(
             model, device_ids=[cfg.rank], find_unused_parameters=True

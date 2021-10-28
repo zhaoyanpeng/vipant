@@ -13,7 +13,7 @@ from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
 from ..util import numel
-from ..model import build_main_model
+from ..model import build_main_model, extract_model_file
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_audio_text_dataloader as build_dataloader 
 
@@ -73,10 +73,14 @@ class Monitor(Monitor):
             return # `eval_norms` is the only task
         if not self.model.training:
             self.echo("Evaluating started...")
-            with torch.no_grad():
-                report = self.infer(self.dataloader, samples=self.cfg.running.eval_samples)
-                self.echo(f"{report}")
-                return None 
+            if self.cfg.model_file.endswith(".out"):
+                with torch.no_grad():
+                    self.repeated_retrieval() # multiple evaluations
+            else:
+                with torch.no_grad():
+                    report = self.infer(self.dataloader, samples=self.cfg.running.eval_samples)
+                    self.echo(f"{report}")
+            return None
         self.echo("Training started...")
         self.last_time = 0.
         self.total_loss = 0
@@ -230,4 +234,15 @@ class Monitor(Monitor):
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
         self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
         return model.report(gold_file=self.gold_file)
+
+    def repeated_retrieval(self):
+        self.echo("Evaluate multiple checkpoints.")
+        model_files = extract_model_file(self.cfg, self.echo)
+        for model_file in model_files:
+            self.cfg.model_file = model_file # modify the global
+            tunable_params = self.model.build()
+            self.model.train(not self.cfg.eval)
+
+            report = self.infer(self.dataloader, samples=self.cfg.running.eval_samples)
+            self.echo(f"{report}")
 

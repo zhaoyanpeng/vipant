@@ -15,6 +15,7 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, MultiStepLR
 
 from ..util import numel, AverageMeter
+from ..model import extract_model_file
 from ..model import ASTClassifier as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_ast_dataloader as build_dataloader
@@ -32,6 +33,10 @@ class Monitor(object):
             self.eval_norms()
             return # mean & std of the data 
         model = Model(cfg, echo)
+        if cfg.eval and cfg.model_file.endswith(".out"):
+            self.model = model
+            self.model.train(not cfg.eval)
+            return #
         tunable_params = model.build(**{"output_dim": output_dim})
         self.model = DistributedDataParallel(
             model, device_ids=[cfg.rank], find_unused_parameters=True
@@ -143,11 +148,15 @@ class Monitor(object):
         if not self.model.training:
             if self.cfg.running.zero_shot:
                 self.echo("(Zero-shot) Evaluating started...")
-                with torch.no_grad():
-                    report = self.zero_shot(
-                        self.dataloader, samples=self.cfg.running.eval_samples, gold_file=self.gold_file
-                    )
-                self.echo(f"{report}")
+                if self.cfg.model_file.endswith(".out"):
+                    with torch.no_grad():
+                        self.repeated_zero_shot() # multiple evaluations
+                else:
+                    with torch.no_grad():
+                        report = self.zero_shot(
+                            self.dataloader, samples=self.cfg.running.eval_samples, gold_file=self.gold_file
+                        )
+                    self.echo(f"{report}")
                 return None
 
             #with torch.no_grad():
@@ -390,6 +399,20 @@ class Monitor(object):
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
         self.echo(f"# sample {nsample}; {nsample / (time.time() - start_time):.2f} samples/s")
         return model.report(gold_file=gold_file, text=text_features)
+
+    def repeated_zero_shot(self):
+        self.echo("Evaluate multiple checkpoints.")
+        model_files = extract_model_file(self.cfg, self.echo)
+        for model_file in model_files:
+            self.cfg.model_file = model_file # modify the global
+            output_dim = len(self.lid2int)
+            tunable_params = self.model.build(**{"output_dim": output_dim})
+            self.model.train(not self.cfg.eval)
+
+            report = self.zero_shot(
+                self.dataloader, samples=self.cfg.running.eval_samples, gold_file=self.gold_file
+            )
+            self.echo(f"{report}")
 
     def save(self):
         fsave = f"{self.cfg.alias_root}/{self.cfg.model_name}/{self.total_step:08d}.pth"

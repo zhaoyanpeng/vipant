@@ -97,13 +97,15 @@ class ASTClassifier(nn.Module):
                 self.echo("Destory image encoder.")
             
             self.audio_head = build_audio_head(self.cfg.model.audio)
-            #self.audio_head.load_state_dict(audio_head_sd)
-            n_o, o_n = self.audio_head.from_pretrained(audio_head_sd, local_cfg)
-            msg = f" except {n_o}" if len(n_o) > 0 else ""
-            self.echo(f"Initialize audio encoder from `audio_head`{msg}.")
+            if audio_head_sd is not None:
+                n_o, o_n = self.audio_head.from_pretrained(audio_head_sd, local_cfg)
+                msg = f" except {n_o}" if len(n_o) > 0 else ""
+                self.echo(f"Initialize audio encoder from `audio_head`{msg}.")
+            else:
+                self.audio_head.copy_state_dict(image_head_sd)
+                self.echo("Initialize audio encoder from `image_head`.")
 
             self.text_head = build_text_head(self.cfg.model.text) #
-            #self.text_head.copy_state_dict(text_head_sd)
             n_o, o_n = self.text_head.copy_state_dict(text_head_sd)
             msg = f" except {n_o}" if len(n_o) > 0 else ""
             self.echo(f"Initialize text encoder from `text_head`{msg}.")

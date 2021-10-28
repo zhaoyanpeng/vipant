@@ -74,22 +74,26 @@ class CLAPDP(nn.Module):
         tunable_params = dict()
         if self.cfg.eval:
             local_cfg, _, audio_head_sd, _, loss_head_sd = load_checkpoint(self.cfg, self.echo)
-            from_scratch, _, text_head_sd, _ = load_clip(None, self.cfg, self.echo)
+            from_scratch, image_head_sd, text_head_sd, _ = load_clip(None, self.cfg, self.echo)
 
             self.audio_head = build_audio_head(self.cfg.model.audio)
-            #self.audio_head.load_state_dict(audio_head_sd)
-            n_o, o_n = self.audio_head.from_pretrained(audio_head_sd, local_cfg)
-            msg = f" except {n_o}" if len(n_o) > 0 else ""
-            self.echo(f"Initialize audio encoder from `audio_head`{msg}.")
+            if audio_head_sd is not None:
+                n_o, o_n = self.audio_head.from_pretrained(audio_head_sd, local_cfg)
+                msg = f" except {n_o}" if len(n_o) > 0 else ""
+                self.echo(f"Initialize audio encoder from `audio_head`{msg}.")
+            else:
+                self.audio_head.copy_state_dict(image_head_sd)
+                self.echo("Initialize audio encoder from `image_head`.")
 
             self.text_head = build_text_head(self.cfg.model.text) #
-            #self.text_head.copy_state_dict(text_head_sd)
             n_o, o_n = self.text_head.copy_state_dict(text_head_sd)
             msg = f" except {n_o}" if len(n_o) > 0 else ""
             self.echo(f"Initialize text encoder from `text_head`{msg}.")
 
-            self.loss_head = build_loss_head(self.cfg.model.loss)
-            #self.loss_head.load_state_dict(loss_head_sd)
+            self.loss_head = build_loss_head(self.cfg.model.loss, **kwargs)
+            if loss_head_sd is not None:
+                self.loss_head.copy_state_dict(loss_head_sd) #
+
             self.cuda(self.cfg.rank) 
         else:
             # try pre-trained model!
