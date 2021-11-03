@@ -2,6 +2,7 @@ from omegaconf import OmegaConf
 import os, re
 from collections import defaultdict
 
+import json
 import time
 import torch
 import numpy as np
@@ -17,6 +18,7 @@ from ..model import CVALPDP as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_audioset_dataloader as build_dataloader
 from ..dataset import build_audioset_label_map as build_label_map
+from ..dataset import build_filter_set
 
 class Monitor(object):
     def __init__(self, cfg, echo, device):
@@ -62,11 +64,22 @@ class Monitor(object):
 
     def build_data(self):
         rcfg = self.cfg.running
+        external_text = None
+        if rcfg.text_emb is not None:
+            text_file = f"{rcfg.data_root}/caption/{rcfg.text_emb}.csv"
+            assert os.path.isfile(text_file), f"{text_file} is not a file."
+            external_text = json.load(open(text_file, "r"))
+
+        filters = build_filter_set(rcfg.data_root, rcfg.filter_set)
+        if filters is not None:
+            self.echo(f"At most {len(filters)} audio clips for training becuase of filtering.")
+
         label_map = build_label_map(rcfg.data_root, label_map=rcfg.label_map, prompt=rcfg.prompt)
         self.echo(f"Total {len(label_map)} sound classes.")
         data_name = rcfg.eval_name if self.cfg.eval else rcfg.data_name
         _, self.dataloader = build_dataloader(
-            self.cfg, data_name, label_map, shuffle=(not self.cfg.eval), train=(not self.cfg.eval)
+            self.cfg, data_name, label_map, shuffle=(not self.cfg.eval), train=(not self.cfg.eval),
+            external_text=external_text, filters=filters
         )
         self.echo(f"Instantiate main dataloader from `{data_name}': total {len(self.dataloader)} batches.")
         self.gold_file = f"{rcfg.data_root}/{data_name}.csv"
@@ -74,7 +87,7 @@ class Monitor(object):
         eval_name = "IGNORE_ME" if self.cfg.eval else rcfg.eval_name
         data_path = f"{rcfg.data_root}/{eval_name}"
         _, self.evalloader = build_dataloader(
-            self.cfg, eval_name, label_map, shuffle=False, train=False
+            self.cfg, eval_name, label_map, shuffle=False, train=False, external_text=external_text
         ) if os.path.isdir(data_path) or os.path.isfile(f"{data_path}.csv") else (None, None)
         if self.evalloader is not None:
             self.echo(f"Will do evaluation every {rcfg.save_rate} steps on {len(self.evalloader)} batches ({eval_name}).")
@@ -83,7 +96,7 @@ class Monitor(object):
         test_name = "IGNORE_ME" if self.cfg.eval else rcfg.test_name
         data_path = f"{rcfg.data_root}/{test_name}"
         _, self.testloader = build_dataloader(
-            self.cfg, test_name, label_map, shuffle=False, train=False
+            self.cfg, test_name, label_map, shuffle=False, train=False, external_text=external_text
         ) if os.path.isdir(data_path) or os.path.isfile(f"{data_path}.csv") else (None, None)
         if self.testloader is not None:
             self.echo(f"Will do test every {rcfg.save_rate} steps on {len(self.testloader)} batches ({test_name}).")
@@ -115,6 +128,10 @@ class Monitor(object):
             if iepoch >= 1:
                 pass #break
             self.epoch(iepoch)
+            #self.echo(
+            #    f"{self.dataloader.dataset._text2embed.cache_info()} " +
+            #    f"{self.dataloader.dataset._async_text2embed.cache_info()}"
+            #)
 
     def make_batch(self, batch):
         images = torch.tensor(batch[0], device=self.device) # (c, h, w)

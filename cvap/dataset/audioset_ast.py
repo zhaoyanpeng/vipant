@@ -133,16 +133,19 @@ class ImageAudioCollator:
         name = union["name"] 
         label = union["label"]
         text_list = union["text"]
-        if isinstance(text_list[0][0], int): # train
-            label = np.array(label)
-        elif isinstance(text_list[0][0], list): # test
-            text_list = list(itertools.chain.from_iterable(text_list))
-            #name = list(itertools.chain.from_iterable(name))
-            #label = # list of label lists 
+        if isinstance(text_list[0][0], np.ndarray): # pre-computed text embeddings
+            text = np.concatenate(text_list, axis=0) # (1, H) -> (b, H)
         else:
-            raise ValueError(f"unrecognized `{type(text_list[0][0])}`")
-        # https://stackoverflow.com/a/38619333
-        text = np.array(list(itertools.zip_longest(*text_list, fillvalue=0))).T
+            if isinstance(text_list[0][0], int): # train / test clf
+                label = np.array(label)
+            elif isinstance(text_list[0][0], list): # test retrieval
+                text_list = list(itertools.chain.from_iterable(text_list))
+                #name = list(itertools.chain.from_iterable(name))
+                #label = # list of label lists
+            else:
+                raise ValueError(f"unrecognized `{type(text_list[0][0])}`")
+            # https://stackoverflow.com/a/38619333
+            text = np.array(list(itertools.zip_longest(*text_list, fillvalue=0))).T
         return (
             np.concatenate(union["image"], axis=0), 
             np.concatenate(union["audio"], axis=0),

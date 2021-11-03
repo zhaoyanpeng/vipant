@@ -49,10 +49,15 @@ class CVALPDP(nn.Module):
             audio_features = data_parallel(
                 self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
             )
-        if text is not None and self.text_head is not None:
+        dummy_text = list(text.shape[1:]) == [1]
+        if text is not None and self.text_head is not None and not dummy_text:
             text_features = data_parallel(
                 self.text_head, text, device_ids=device_ids, module_kwargs=kwargs
             )
+        elif text is not None: # pre-computed unnormalized features
+            if self.loss_head.normalized and not dummy_text:
+                text = text / text.norm(dim=-1, keepdim=True)
+            text_features = text # dummy text will be ignored
         loss = self.loss_head(image_features, audio_features, text_features, **kwargs)
         return loss     
 
@@ -173,7 +178,7 @@ class CVALPDP(nn.Module):
                 self.echo(f"Initialize text encoder from `image_head`{msg}.")
         ref_modules = self.text_head.replace_modules(**kwargs)
         self.echo(f"T:  text_head.modules referring to image_head.modules: {ref_modules}.")
-        if len(self.text_head.state_dict()) == 0:
+        if self.cfg.running.text_emb is not None or len(self.text_head.state_dict()) == 0:
             self.text_head = None
             self.echo("Destory text encoder.")
 

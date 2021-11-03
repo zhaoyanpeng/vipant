@@ -4,19 +4,25 @@ import glob
 import json
 import torch
 import random
+import asyncio
 import warnings
 import itertools
 import torchaudio
 import numpy as np
 import tensorflow as tf
+#import asyncstdlib as a
 from pathlib import Path
 from tqdm import tqdm
 from PIL import Image as PILImage
+#from fastcache import clru_cache
+from functools import lru_cache
+#from async_lru import alru_cache
 from itertools import cycle, islice, chain
 from einops import rearrange, repeat
 from collections import defaultdict
 from tabulate import tabulate
 from termcolor import colored
+#from cachetools import cached, LRUCache, func
 
 import multiprocessing as mp
 import torch.utils.data as data
@@ -196,7 +202,7 @@ class ASTNpz(data.Dataset):
 class ASTSrc(data.Dataset):
     """ `__getitem__' loads raw file from disk.
     """
-    def __init__(self, cfg, data_name, train, label_map, weighted, filter_set=None):
+    def __init__(self, cfg, data_name, train, label_map, weighted, filter_set=None, external_text=None):
         data_path = f"{cfg.data_root}/{data_name}.csv"
         assert os.path.isfile(data_path), f"{data_path} is not a file."
         self.cfg = cfg
@@ -209,7 +215,9 @@ class ASTSrc(data.Dataset):
                 record = json.loads(line)
                 if filter_set is not None and record["id"] not in filter_set:
                     continue # let us skip this sample
-                if cfg.cat_label:
+                if external_text is not None:
+                    self._add_text(record, external_text)
+                elif cfg.cat_label:
                     self._cat_label(record)
                 self.dataset.append(record) 
                 if not train and iline + 1 == cfg.eval_samples:
@@ -251,6 +259,11 @@ class ASTSrc(data.Dataset):
     def _shuffle(self):
         pass
 
+    def _add_text(self, record, external_text):
+        record["captions"] = external_text.get(
+            record["id"], [-1]
+        )
+
     def _cat_label(self, record):
         categories = record["labels"]
         label_text = [re.sub(
@@ -285,7 +298,12 @@ class ASTSrc(data.Dataset):
                     frame_emb_file = f"{self.cfg.data_root}/{self.cfg.frame_emb}/{name}.{images[idx].rsplit('.', 1)[0]}.npz"
 
         if not self.cfg.clf:
-            if self.cfg.cat_label:
+            if self.cfg.text_emb is not None:
+                caption_indice = self.dataset[index]["captions"] # list of caption id
+                ict = np.random.choice(len(caption_indice), 1)[0] if self.train else 0
+                label, text, text_int = 0, "", caption_indice[ict]
+                text_int = f"{self.cfg.data_root}/caption/{self.cfg.text_emb}/{text_int}.npz"
+            elif self.cfg.cat_label:
                 record = self.dataset[index]
                 label, text, text_int = 0, record["captions"][0], record["captions_bpe"][0]
             else:
@@ -299,6 +317,38 @@ class ASTSrc(data.Dataset):
 
         item = {"text": text_int, "name": name}
         return item, label, aclip_file, frame_file, frame_emb_file
+
+    def blocking_io(self, fname):
+        try:
+            image = np.load(fname)["v"]
+        except Exception as e:
+            image = np.random.rand(self.cfg.embed_dim).astype("float32")
+            warnings.warn(f"use random image instead because `{e}` {fname}.")
+        return image
+
+    #@a.lru_cache(maxsize=100000)
+    async def _async_text2embed(self, fname):
+        #print(self._text2embed.cache_info())
+        # https://docs.python.org/3/library/asyncio-eventloop.html#executing-code-in-thread-or-process-pools
+        loop = asyncio.get_running_loop()
+        image = await loop.run_in_executor(None, self.blocking_io, fname)
+        return image
+
+    #@lru_cache(maxsize=100000)
+    #@clru_cache(maxsize=100000)
+    #@func.lru_cache(maxsize=100000)
+    #@cached(cache=LRUCache(maxsize=100000))
+    def _text2embed(self, fname):
+        #print(self._text2embed.cache_info())
+        # cache does not work in multi-thread model (e.g., worker > 0)
+        # see https://discuss.pytorch.org/t/dataloader-re-initialize-dataset-after-each-iteration/32658
+        # and https://discuss.pytorch.org/t/dataloader-resets-dataset-state/27960
+        try:
+            image = np.load(fname)["v"]
+        except Exception as e:
+            image = np.random.rand(self.cfg.embed_dim).astype("float32")
+            warnings.warn(f"use random image instead because `{e}` {fname}.")
+        return image
 
     def _image2embed(self, fname):
         try:
@@ -392,6 +442,12 @@ class ASTSrc(data.Dataset):
 
     def __getitem__(self, index):
         item, label, aclip_file, frame_file, frame_emb_file = self._process_item(index)
+
+        text = item["text"] # pre-computed text embeddings
+        if isinstance(text, str) and text.endswith("npz"):
+            #item["text"] = asyncio.get_event_loop().run_until_complete(self._async_text2embed(text))[None]
+            #item["text"] = asyncio.run(self._async_text2embed(text))[None]
+            item["text"] = self._text2embed(text)[None]
 
         # higher priority for pre-computed frame embeddings
         image = (self._image2embed(frame_emb_file)

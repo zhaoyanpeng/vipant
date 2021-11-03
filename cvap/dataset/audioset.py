@@ -34,7 +34,13 @@ def build_filter_set(data_root, filter_set):
     try: # filters can be None
         name, topk = filter_set.split(",")
         filter_file = f"{data_root}/{name}"
-        if filter_file[-1] == "k":
+        if filter_file[-3:] == "csv":
+            samples = set()
+            with open(filter_file, "r") as fr:
+                for line in fr:
+                    line = line.strip()
+                    samples.add(line)
+        elif filter_file[-1] == "k":
             samples_per_label = json.load(open(filter_file, "r"))
             samples = set()
             for k, v in samples_per_label.items():
@@ -99,14 +105,14 @@ def build_audioset_label_map(data_root, label_map="ontology,eval_segments", prom
     #print(label_map, len(label_map))
     return label_map 
 
-def build_audioset_dataloader(cfg, data_name, label_map, shuffle=True, train=True):
+def build_audioset_dataloader(cfg, data_name, label_map, shuffle=True, train=True, external_text=None, filters=None):
     ddp_mode = torch.distributed.is_initialized()
     rcfg = cfg.running
     if data_name.startswith("src"):
         if not rcfg.force_npz:
-            dataset = ASTSrc(rcfg, data_name, train, label_map, False)
+            dataset = ASTSrc(rcfg, data_name, train, label_map, False, external_text=external_text, filter_set=filters)
         else:
-            dataset = ASTNpz(rcfg, data_name, train, label_map, False)
+            dataset = ASTNpz(rcfg, data_name, train, label_map, False, external_text=external_text)
     elif data_name.startswith("npz"):
         dataset = AudiosetDatasetNpz(rcfg, data_name, train, label_map, False)
     elif data_name.startswith("audiocaps"): # audio captioning
