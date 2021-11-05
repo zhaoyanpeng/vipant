@@ -2,6 +2,7 @@ from collections import OrderedDict
 from typing import Tuple, Union
 from fvcore.common.registry import Registry
 
+import jax
 import copy
 import json
 import threading
@@ -9,10 +10,13 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.distributed as dist
+import jax.numpy as jnp
 from torch import nn
 
 from collections import defaultdict
 from clip import LayerNorm, Transformer, ModifiedResNet, VisualTransformer  
+
+from cvap.util import unit_normalize
 
 LOSS_HEADS_REGISTRY = Registry("LOSS_HEADS")
 LOSS_HEADS_REGISTRY.__doc__ = """
@@ -416,6 +420,84 @@ class ClassificationHead(LossHead):
         logit_scale = self.logit_scale.exp()
         logits_per_x1 = logit_scale * self.linear(x1)
         loss_mean_x1 = self.loss_fn(logits_per_x1, x2)
+        return loss_mean_x1
+
+@LOSS_HEADS_REGISTRY.register()
+class JaxClassificationHead(LossHead):
+    def __init__(self, cfg, **kwargs):
+        super().__init__()
+        self.normalized = True
+        assert "output_dim" in kwargs, f"`the label number` is not found in `kwargs`"
+        nlabel = kwargs["output_dim"]
+        self.reduce = False
+
+    def copy_state_dict(self, state_dict):
+        pass
+
+    def infer(self, x1, x2, *args, **kwargs):
+        if not hasattr(self, "audios") or not hasattr(self, "x1s") or \
+            not hasattr(self, "x2s") or not hasattr(self, "ids"):
+            self.audios, self.x1s, self.x2s, self.ids = [], [], [], []
+        self.audios.append(x1)
+        self.x2s.append(x2)
+        names = kwargs.get("names", None)
+        if names is not None:
+            self.ids.extend(names)
+        return None
+
+    def report(self, gold_file=None, **kwargs):
+        #x1s = torch.cat(self.x1s)
+        #x2s = torch.cat(self.x2s)
+        #nsample = len(x1s)
+        #precision = (x1s == x2s).sum() / nsample * 100.
+
+        labels = jax.numpy.concatenate(self.x2s)
+        nsample = labels.shape[0]
+
+        # zero-shot classification
+        text = kwargs.get("text", None)
+        if text is not None:
+            audios = jax.numpy.concatenate(self.audios)
+            labels = jax.numpy.concatenate(self.x2s)
+            if not self.normalized:
+                audios = unit_normalize(audios)
+                text = unit_normalize(text)
+            # audio -> label
+            x12 = jnp.einsum('bh,lh->bl', audios, text)
+            ind_12 = jnp.argsort(-x12)
+
+            # top-1 prediction
+            predictions = ind_12[:, 0]
+            label_map = kwargs.get("label_map", None)
+            if isinstance(label_map, dict):
+                mapped_predictions = [
+                    label_map[x] for x in predictions.flatten().tolist()
+                ]
+                predictions = jnp.array(mapped_predictions)
+
+            t12_1 = (predictions == labels).sum() / predictions.shape[0] * 100.
+
+            #r12 = torch.where(ind_12 == labels)[1]
+            #t12_1 = (r12 < 1).sum() / r12.shape[0] * 100.
+
+            precision = t12_1
+        else:
+            precision = -1.
+
+        del self.audios, self.x1s, self.x2s, self.ids
+        report = (
+            f"A->T: p1 = {precision:2.2f} @ {nsample}"
+        )
+        return report
+
+    def forward(self, x1, x2, *args, **kwargs):
+        """ x1 is the input features and x2 is the label
+        """
+        if not self.training:
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                return self.infer(x1, x2, *args, **kwargs)
+            return None
+        loss_mean_x1 = 0.
         return loss_mean_x1
 
 @LOSS_HEADS_REGISTRY.register()

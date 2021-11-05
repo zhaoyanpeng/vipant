@@ -84,10 +84,11 @@ def build_audioset_label_map(data_root, label_map="ontology,eval_segments", prom
     )
     category_list = list()
     ontology = json.load(open(label_path, "r"))
+    prompt = "" if prompt.strip() == "" else prompt.strip() + " "
     for item in ontology:
         category = item["id"]
         category_list.append(
-            (category, prompt + " " + item["name"].lower())
+            (category, prompt + item["name"].lower())
         )
     text_list = [item[1] for item in category_list]
     label_int = tokenize(text_list, as_list=True)

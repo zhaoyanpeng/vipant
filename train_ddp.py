@@ -1,3 +1,4 @@
+import os, sys
 from omegaconf import DictConfig, OmegaConf
 import logging
 import torch
@@ -46,6 +47,8 @@ def main(cfg, rank, ddp, pg, device, manager):
     if cfg.verbose or not cfg.eval:
         cfg_str = OmegaConf.to_yaml(cfg)
         logger.info(f"\n\n{cfg_str}")
+    if cfg.blockprint:
+        sys.stdout = open(os.devnull, 'w')
 
     ngpu = torch.cuda.device_count()
     logger.info("World size: {}; rank: {}".format(ngpu, rank))

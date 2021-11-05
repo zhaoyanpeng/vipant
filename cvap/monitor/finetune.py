@@ -16,8 +16,7 @@ import torch.distributed as dist
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
-from ..model import extract_model_file
-from ..model import AudioClassifier as Model
+from ..model import build_main_model, extract_model_file
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset.audio import build_dataloader_list
 
@@ -28,7 +27,7 @@ class Monitor(object):
         self.echo = echo
         self.device = device
         output_dim = self.build_data()
-        model = Model(cfg, echo)
+        model = build_main_model(cfg, echo)
         if cfg.eval and cfg.model_file.endswith(".out"):
             self.model = model
             self.model.train(not cfg.eval)
@@ -42,7 +41,7 @@ class Monitor(object):
 
     def reinitialize(self, cfg, echo):
         self.echo("Reinitialize everything except `dataloader_list`.")
-        model = Model(cfg, echo)
+        model = build_main_model(cfg, echo)
         output_dim = len(self.lid2str)
         tunable_params = model.build(**{"output_dim": output_dim})
         self.model = DistributedDataParallel(
@@ -354,8 +353,7 @@ class Monitor(object):
             self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
                 self.optimizer, list(range(5, 26)), gamma=0.85
             )
-        debug = False 
-        if not debug:
+        if not self.cfg.verbose:
             return
         self.echo(f"Gradienting The Following Parameters:")
         for k, v in self.model.named_parameters():

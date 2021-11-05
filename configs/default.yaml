@@ -2,6 +2,7 @@ alias_root: "/net/nfs2.mosaic/yann/model/cvap"
 model_root: "/net/nfs2.mosaic/yann/model/cvap" 
 model_name: "test"
 model_file: "00000204.pth"
+blockprint: False
 monitor: DPMonitor
 worker: CVAPDP
 verbose: False

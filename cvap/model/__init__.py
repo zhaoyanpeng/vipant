@@ -7,6 +7,7 @@ from .cvalp_dp import CVALPDP
 from .clap_dp import CLAPDP
 from .cvap_dp import CVAPDP
 from .cvap_siamese import CVASPDP
+from .mreserve_clf import MreserveClassifier
 
 from fvcore.common.registry import Registry
 
@@ -15,6 +16,7 @@ VAL_MODELS_REGISTRY.__doc__ = """
 Registry for vision-audio-language models.
 """
 
+VAL_MODELS_REGISTRY.register(MreserveClassifier)
 VAL_MODELS_REGISTRY.register(AudioSetClassifier)
 VAL_MODELS_REGISTRY.register(AudioClassifier)
 VAL_MODELS_REGISTRY.register(ASTClassifier)
