@@ -5,9 +5,9 @@ from .ast import ASTClassifier
 from .cvap_ddp import CVAPDDP
 from .cvalp_dp import CVALPDP
 from .clap_dp import CLAPDP
+from .clvp_dp import CLVPDP
 from .cvap_dp import CVAPDP
 from .cvap_siamese import CVASPDP
-from .mreserve_clf import MreserveClassifier
 
 from fvcore.common.registry import Registry
 
@@ -16,7 +16,6 @@ VAL_MODELS_REGISTRY.__doc__ = """
 Registry for vision-audio-language models.
 """
 
-VAL_MODELS_REGISTRY.register(MreserveClassifier)
 VAL_MODELS_REGISTRY.register(AudioSetClassifier)
 VAL_MODELS_REGISTRY.register(AudioClassifier)
 VAL_MODELS_REGISTRY.register(ASTClassifier)
@@ -24,7 +23,14 @@ VAL_MODELS_REGISTRY.register(CVAPDDP)
 VAL_MODELS_REGISTRY.register(CVALPDP)
 VAL_MODELS_REGISTRY.register(CVASPDP)
 VAL_MODELS_REGISTRY.register(CLAPDP)
+VAL_MODELS_REGISTRY.register(CLVPDP)
 VAL_MODELS_REGISTRY.register(CVAPDP)
 
 def build_main_model(cfg, echo, **kwargs):
     return VAL_MODELS_REGISTRY.get(cfg.worker)(cfg, echo)
+
+try: #
+    from .mreserve_clf import MreserveClassifier
+    VAL_MODELS_REGISTRY.register(MreserveClassifier)
+except ImportError:
+    pass

@@ -49,7 +49,7 @@ class CVALPDP(nn.Module):
             audio_features = data_parallel(
                 self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
             )
-        dummy_text = list(text.shape[1:]) == [1]
+        dummy_text = list(text.shape[1:]) == [1] if text is not None else True
         if text is not None and self.text_head is not None and not dummy_text:
             text_features = data_parallel(
                 self.text_head, text, device_ids=device_ids, module_kwargs=kwargs

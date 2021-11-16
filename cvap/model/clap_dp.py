@@ -51,6 +51,12 @@ class CLAPDP(nn.Module):
         loss = self.loss_head(audio_features, text_features, **kwargs)
         return loss
 
+    def encode_text(self, text, *args, device_ids=[0], **kwargs):
+        text_features = data_parallel(
+            self.text_head, text, device_ids=device_ids, module_kwargs=kwargs
+        )
+        return text_features
+
     def collect_audio_state_dict(self):
         return (
             self.audio_head.state_dict(), 

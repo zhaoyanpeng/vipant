@@ -15,7 +15,6 @@ from torch.nn.parallel import DistributedDataParallel
 from ..util import numel
 from ..model import build_main_model, extract_model_file
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
-from ..dataset import build_audio_text_dataloader as build_dataloader 
 
 from .cvap_dp import Monitor
 
@@ -46,8 +45,46 @@ class Monitor(Monitor):
         std = (sos - som ** 2).sqrt()
         self.echo(f"MEAN: {som.cpu().tolist()} STD: {std.cpu().tolist()}")
 
+    def encode_text(self):
+        """ use batch size 1 in case each audio clip has different numbers of captions.
+        """
+        rcfg = self.cfg.running
+        model_file = rcfg.clip_model_name.lower() #cfg.model_file
+        audio_root = f"{rcfg.data_root}/caption/audiocap/{model_file}"
+        if not os.path.exists(audio_root):
+            os.makedirs(audio_root)
+        def save_npz(names, text):
+            assert text.shape[0] % len(names) == 0, "please use batch size 1."
+            ncap_per_audio = int(text.shape[0] / len(names))
+            for i, name in enumerate(names):
+                np.savez_compressed(
+                    f"{audio_root}/{name}", v=text[i * ncap_per_audio : (i + 1) * ncap_per_audio]
+                )
+        self.echo(f"Encode caption ({len(self.dataloader)} batches)...to `{audio_root}`")
+        nsample = 0
+        start_time = time.time()
+        device_ids = [i for i in range(self.cfg.num_gpus)]
+        for step, batch in enumerate(self.dataloader):
+            _, text, names = self.make_batch(batch)
+
+            text_features = self.model.encode_text(text, device_ids=device_ids)
+            text_features = text_features.cpu().numpy()
+
+            save_npz(names, text=text_features)
+
+            nsample += text.shape[0]
+            if (step + 1) % rcfg.peep_rate == 0:
+                self.echo(f"--step {step + 1:08d} {nsample / (time.time() - start_time):.2f} samples/s")
+        self.echo(f"Saving {nsample} text vectors.")
+
     def build_data(self):
         rcfg = self.cfg.running
+        if rcfg.dataloader == "al":
+            from ..dataset import build_audio_text_dataloader as build_dataloader
+        elif rcfg.dataloader == "lv":
+            from ..dataset import build_image_text_dataloader as build_dataloader
+        else:
+            raise ValueError("Unknown data loader `{rcfg.dataloader}`.")
         data_name = rcfg.eval_name if self.cfg.eval else rcfg.data_name
         _, self.dataloader = build_dataloader(
             self.cfg, data_name, shuffle=(not self.cfg.eval), train=(not self.cfg.eval)
@@ -73,6 +110,11 @@ class Monitor(Monitor):
             return # `eval_norms` is the only task
         if not self.model.training:
             self.echo("Evaluating started...")
+
+            with torch.no_grad():
+                self.encode_text()
+            return None
+
             if self.cfg.model_file.endswith(".out"):
                 with torch.no_grad():
                     self.repeated_retrieval() # multiple evaluations
@@ -111,7 +153,9 @@ class Monitor(Monitor):
             batch = (
                 torch.tensor(
                     batch[0], device=self.device
-                ).unsqueeze(1), # audio
+                ).unsqueeze(1) if len(batch[0].shape) == 3 else (
+                    torch.tensor(batch[0], device=self.device)
+                ), # audio
                 torch.tensor(
                     batch[1], device=self.device
                 ), # captions / label

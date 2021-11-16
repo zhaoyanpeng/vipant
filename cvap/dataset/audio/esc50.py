@@ -10,6 +10,7 @@ import numpy as np
 import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
+from collections import defaultdict
 from itertools import cycle, islice, chain
 from einops import rearrange, repeat
 
@@ -20,7 +21,10 @@ import torch.nn.functional as F
 from clip import tokenize
 from .transform import make_transform, RandomCrop
 
-from mreserve.preprocess import video_to_segments, preprocess_video
+try:
+    from mreserve.preprocess import video_to_segments, preprocess_video
+except ImportError:
+    pass
 
 def _extract_kaldi_spectrogram(
     filename, params, train=True, mean_channel=False, zero_mean_wf=False, max_audio_len=1000, transform_audio=None
@@ -169,6 +173,7 @@ class ImageAudioDataset4Mreserve(data.Dataset):
             pad_segment=acfg.pad_segment,
             min_duration=acfg.min_duration,
             time_interval=acfg.time_interval,
+            tile_length=acfg.tile_length,
         )
 
         video_segments = video_segments[:8]
@@ -384,6 +389,70 @@ def build_dataloader_list_audioset(cfg, mreserve=False):
 
     return loader_tuple, lid2str, lid2int, None
 
+def build_dataloader_list_voxceleb2(cfg, mreserve=False):
+    rcfg = cfg.running
+    data_path = f"{rcfg.data_root}/{rcfg.data_name}.csv"
+    assert os.path.isfile(data_path), f"{data_path} is not a file."
+    # load all data indice
+    list_file = f"{rcfg.data_root}/{rcfg.data_name}_list.csv"
+    nsample_per_vid = rcfg.nsample_per_vid
+    samples_by_vid = defaultdict(list)
+    with open(list_file, "r") as fr:
+        for record in fr:
+            record = json.loads(record)
+            k, v = list(record.items())[0]
+            nsample = min(nsample_per_vid, len(v))
+            indice = np.random.choice(len(v), nsample, replace=False)
+            samples = [v[idx] for idx in indice]
+            for a, b in samples:
+                samples_by_vid[k].append(f"{b}/{a}")
+    # create splits
+    lid2str = dict()
+    str2lid = dict() # label space
+    splits = {"dev": [], "test": []}
+    dev_fold, test_fold = [], []
+    with open(data_path, "r") as fr:
+        for record in fr:
+            record = json.loads(record)
+            split_id = record["split"]
+            if split_id == "dev":
+                continue
+            name = record["name"]
+            vox_id = record["vox_id"]
+            split = splits[split_id]
+
+            lid_int = str2lid.setdefault(name, len(str2lid))
+            lid_str = lid2str.setdefault(lid_int, name)
+
+            #print(lid_int, len(samples_by_vid[vox_id]), vox_id, lid_str)
+            for sample in samples_by_vid[vox_id]:
+                acopy = copy.deepcopy(record)
+                acopy["aclip"] = f"aac/{vox_id}/{sample}"
+                acopy["label_int"] = lid_int
+                acopy["label_str"] = lid_str
+                split.append(acopy)
+
+    loader_tuple = ((
+        lambda: None,
+        lambda data_list=splits["test"]: build_dataloader(cfg, data_list, shuffle=False, train=False, mreserve=mreserve)
+    ),)
+
+    label_path = f"{rcfg.data_root}/meta/{rcfg.prompt}.json"
+    if not os.path.isfile(label_path):
+        prompt = rcfg.prompt.strip()
+        prompt = "" if prompt == "" else prompt + " "
+        lid2int = [prompt + lid2str[i].replace("_", " ") for i in range(len(lid2str))]
+        #lid2int = [lid2str[i].replace("_", " ") + " " + prompt for i in range(len(lid2str))]
+        label_map = {i: i for i in range(len(lid2str))}
+    else:
+        lid2int = [lid2str[i].replace("_", " ") for i in range(len(lid2str))]
+        pass
+    #print(lid2str)
+    #print(lid2int, len(lid2int), len(splits["test"]))
+    lid2int = tokenize(lid2int, as_list=True)
+    lid2int = np.array(list(itertools.zip_longest(*lid2int, fillvalue=0))).T
+    return loader_tuple, lid2str, lid2int, None
+
 def build_dataloader_list(cfg, mreserve=False):
     if cfg.running.data_name == "esc50":
         return build_dataloader_list_esc50(cfg, mreserve=mreserve)
@@ -391,6 +460,8 @@ def build_dataloader_list(cfg, mreserve=False):
         return build_dataloader_list_us8k(cfg, mreserve=mreserve)
     elif cfg.running.data_name == "audioset":
         return build_dataloader_list_audioset(cfg, mreserve=mreserve)
+    elif cfg.running.data_name == "voxceleb2":
+        return build_dataloader_list_voxceleb2(cfg, mreserve=mreserve)
     else:
         raise ValueError(f"unrecognized dataset `{cfg.running.data_name}`.") 
 

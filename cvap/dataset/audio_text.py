@@ -137,7 +137,7 @@ class AudioTextCollator:
             name,
         )
 
-def build_dataloader(cfg, data_list, dataset_cls, shuffle=True, train=True):
+def build_dataloader(cfg, data_list, dataset_cls, shuffle=True, train=True, collator_cls=AudioTextCollator):
     ddp_mode = torch.distributed.is_initialized()
     rcfg = cfg.running
     if isinstance(dataset_cls, str):
@@ -159,7 +159,7 @@ def build_dataloader(cfg, data_list, dataset_cls, shuffle=True, train=True):
     dataloader = torch.utils.data.DataLoader(
         dataset, 
         batch_size=per_device_batch_size,
-        collate_fn=AudioTextCollator(),
+        collate_fn=collator_cls(),
         num_workers=(0 if ddp_mode else cfg.num_proc),
         pin_memory=True,
         sampler=sampler,

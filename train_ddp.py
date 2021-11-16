@@ -48,6 +48,7 @@ def main(cfg, rank, ddp, pg, device, manager):
         cfg_str = OmegaConf.to_yaml(cfg)
         logger.info(f"\n\n{cfg_str}")
     if cfg.blockprint:
+        # https://stackoverflow.com/a/8391735
         sys.stdout = open(os.devnull, 'w')
 
     ngpu = torch.cuda.device_count()

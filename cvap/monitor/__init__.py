@@ -6,4 +6,8 @@ from .clap_dp import Monitor as LAMonitor
 from .cvap_dp import Monitor as DPMonitor
 from .ast import Monitor as ASTMonitor
 from .cvap_siamese import Monitor as VASMonitor # bimodal (V-A) siamese
-from .mreserve_zeroshot import Monitor as JaxESCMonitor
+
+try: #
+    from .mreserve_zeroshot import Monitor as JaxESCMonitor
+except ImportError:
+    pass

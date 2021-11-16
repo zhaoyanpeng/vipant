@@ -12,6 +12,7 @@ lr_bias: 0.0048
 batch_size: ${running.batch_size}
 epochs: ${running.epochs}
 steps: []
+gamma: 0.5
 batch_sch: False # schedule lr per batch
 optimizer: [Adam, {lr: '${optimizer.lr}', betas: '${optimizer.betas}', weight_decay: '${optimizer.weight_decay}'}]
-scheduler: [MultiStepLR, {milestones: '${optimizer.steps}', gamma: 0.5}]
+scheduler: [MultiStepLR, {milestones: '${optimizer.steps}', gamma: '${optimizer.gamma}'}]

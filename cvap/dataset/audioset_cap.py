@@ -61,6 +61,8 @@ class AudioCapDatasetSrc(data.Dataset):
         self.frame_key = cfg.frame_key
         self.train = train
         self.cfg = cfg
+
+        self.rnd_cap = getattr(cfg, "rnd_cap", False) # random AL fine-tuning baseline
         
         acfg = cfg.audio
         self.transform_image = make_image_transform(cfg.resolution)
@@ -102,6 +104,9 @@ class AudioCapDatasetSrc(data.Dataset):
         label = [0]
         captions_bpe = self.dataset[index]["captions_bpe"]
         if self.train:
+            if self.rnd_cap: # random baseline
+                rnd_idx = np.random.randint(0, self.length)
+                captions_bpe = self.dataset[rnd_idx]["captions_bpe"]
             icp = np.random.choice(len(captions_bpe), 1)[0]
             text_bpe = captions_bpe[icp]
         else:

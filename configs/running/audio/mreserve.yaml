@@ -2,6 +2,7 @@ verbose: False
 end_trim: 0
 segment_gap: 0
 pad_segment: True
+tile_length: null
 min_duration: 0
 time_interval: 5.0
 grid_size: [18, 32]

@@ -15,6 +15,7 @@ save_epoch: False
 multi_view: False
 frame_key: "frame"
 frame_emb: null
+text_emb: null
 imagine: True
 embed_dim: ${model.image.embed_dim}
 # vision backbone

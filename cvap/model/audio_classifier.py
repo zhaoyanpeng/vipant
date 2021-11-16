@@ -89,27 +89,25 @@ class AudioClassifier(nn.Module):
             # try pre-trained model!
             local_cfg, _, audio_head_sd, _, loss_head_sd = load_checkpoint(self.cfg, self.echo)
             # try clip! TODO do we always have to load CLIP?
-            from_scratch, image_head_sd, _, model = load_clip(local_cfg, self.cfg, self.echo)
+            from_scratch, image_head_sd, _, model = load_clip(None, self.cfg, self.echo)
+            # try meme!
+            with_meme, meme_image_head_sd = load_meme(self.cfg, self.echo)
             
-            #cfg = local_cfg if local_cfg is not None else self.cfg
             self.audio_head = build_audio_head(self.cfg.model.audio)
             if not self.cfg.model.audio.from_scratch:
                 if local_cfg is not None:
-                    if "misc.positional_embedding" in audio_head_sd:
-                        self.audio_head = build_audio_head(local_cfg.model.audio)
-                        self.audio_head.load_state_dict(audio_head_sd)
-                    else: # backward compatible
-                        if (list(audio_head_sd.keys())[0]).startswith("encoder."):
-                            audio_head_sd_new = OrderedDict()
-                            for k, v in audio_head_sd.items():
-                                k = re.sub("^encoder\.", "", k)
-                                audio_head_sd_new[k] = v
-                            audio_head_sd = audio_head_sd_new
-                        self.audio_head.copy_state_dict(audio_head_sd)
+                    # TODO better to use `from_pretrained()`
+                    self.audio_head.from_pretrained(audio_head_sd, local_cfg)
                     self.echo("Initialize audio encoder from `audio_head`.")
                 elif not from_scratch:
-                    self.audio_head.copy_state_dict(image_head_sd)
-                    self.echo("Initialize audio encoder from `image_head`.")
+                    if with_meme: # higher priority
+                        msg = " `meme_image_head`"
+                        n_o, o_n = self.audio_head.copy_state_dict(meme_image_head_sd)
+                    else:
+                        msg = " `image_head`"
+                        n_o, o_n = self.audio_head.copy_state_dict(image_head_sd)
+                    msg += f" except {n_o}" if len(n_o) > 0 else ""
+                    self.echo(f"Initialize audio encoder from{msg}.")
                 else:
                     self.echo("Have to learn from scratch.")
                 
@@ -118,9 +116,12 @@ class AudioClassifier(nn.Module):
                 f"loss_head.{k}": v for k, v in self.loss_head.named_parameters()
             } 
             if not self.cfg.model.audio.freeze:
+                excl_modules = set(self.cfg.running.excl_modules.amodules)
+                pattern = "|".join([f"^{m}\." for m in excl_modules])
                 tunable_params.update({
                     f"audio_head.{k}": v for k, v in self.audio_head.named_parameters()
-                })
+                if pattern == "" or not re.match(pattern, k)}) # filter out excluded parameters
+                self.echo(f"Tune audio encoder (excl. {excl_modules}).")
             else:
                 self.echo("Freeze audio encoder.")
             self.cuda(self.cfg.rank)

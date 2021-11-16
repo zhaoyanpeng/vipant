@@ -1,5 +1,6 @@
 clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
 clip_model_name: "ViT-B32"
+nsample_per_vid: 10 # # samples per VoxCeleb id
 data_root: "/home/yanpengz/data/esc50" 
 prompt: "the sound of " #"label_map" for ESC50 and US8K
 text: "the video of<|MASK|>"

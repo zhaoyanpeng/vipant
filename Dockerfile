@@ -30,6 +30,9 @@ RUN pip install --no-cache-dir --upgrade numpy
 # java
 RUN conda install -c conda-forge openjdk 
 
+RUN pip install --no-cache-dir --upgrade jax
+RUN pip install --no-cache-dir --upgrade jaxlib
+
 COPY coco_caption /audio/coco_caption
 COPY clip /audio/clip
 COPY cvap /audio/cvap
