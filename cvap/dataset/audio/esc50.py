@@ -27,11 +27,15 @@ except ImportError:
     pass
 
 def _extract_kaldi_spectrogram(
-    filename, params, train=True, mean_channel=False, zero_mean_wf=False, max_audio_len=1000, transform_audio=None
+    filename, params, train=True, mean_channel=False, zero_mean_wf=False, max_audio_len=1000, transform_audio=None, tile_audio=False,
 ):
     waveform, sample_rate = torchaudio.load(filename)
     if mean_channel: # mean along channel # TODO else branch should take a specific channel
         waveform = waveform.mean(0, keepdim=True)
+    desired_len = int((max_audio_len / 100) * sample_rate)
+    if tile_audio and desired_len > waveform.shape[-1]:
+        ntile = int(np.ceil(desired_len / waveform.shape[-1]))
+        waveform = torch.tile(waveform, (1, ntile))[:desired_len]
     if transform_audio is not None:
         waveform = transform_audio(waveform) 
     waveform = RandomCrop.random_crop(
@@ -100,6 +104,7 @@ class ImageAudioDatasetSrc(data.Dataset):
             train=self.train,
             max_audio_len=max_audio_len,
             zero_mean_wf=self.cfg.audio.zero_mean_wf,
+            tile_audio=False, #self.cfg.audio.tile_audio,
             transform_audio=(
                 self.transform_audio if self.train and not self.cfg.audio.eval_norms else None
             )
@@ -108,6 +113,12 @@ class ImageAudioDatasetSrc(data.Dataset):
         npad =  self.cfg.max_audio_len - audio.shape[0]
         if npad > 0: # always pad to the right
             audio = np.pad(audio, ((0, npad), (0, 0)), "constant", constant_values=(0., 0.))
+
+        """
+        if self.cfg.audio.tile_audio and max_audio_len > audio.shape[0]:
+            ntile = int(np.ceil(max_audio_len / audio.shape[0]))
+            audio = np.tile(audio, (ntile, 1))[:max_audio_len]
+        """
 
         if not self.cfg.audio.eval_norms and len(self.audio_norms) == 2:
             mean, std = self.audio_norms
@@ -176,7 +187,7 @@ class ImageAudioDataset4Mreserve(data.Dataset):
             tile_length=acfg.tile_length,
         )
 
-        video_segments = video_segments[:8]
+        video_segments = video_segments[:7]
         dummy_segment = copy.deepcopy(video_segments[0])
         video_segments.insert(0, dummy_segment)
 
@@ -409,6 +420,7 @@ def build_dataloader_list_voxceleb2(cfg, mreserve=False):
     # create splits
     lid2str = dict()
     str2lid = dict() # label space
+    lid2face = dict()
     splits = {"dev": [], "test": []}
     dev_fold, test_fold = [], []
     with open(data_path, "r") as fr:
@@ -421,12 +433,17 @@ def build_dataloader_list_voxceleb2(cfg, mreserve=False):
             vox_id = record["vox_id"]
             split = splits[split_id]
 
+            face = f'{record["vgg_split"]}/{record["vgg_id"]}/{record["face"]}'
+            face_file = f"{rcfg.data_root}/vggface2/{face}"
+
             lid_int = str2lid.setdefault(name, len(str2lid))
             lid_str = lid2str.setdefault(lid_int, name)
+            lid2face.setdefault(lid_int, face_file)
 
             #print(lid_int, len(samples_by_vid[vox_id]), vox_id, lid_str)
             for sample in samples_by_vid[vox_id]:
                 acopy = copy.deepcopy(record)
+                acopy["aclip"] = f"mp4/{vox_id}/{sample[:-3]}mp4"
                 acopy["aclip"] = f"aac/{vox_id}/{sample}"
                 acopy["label_int"] = lid_int
                 acopy["label_str"] = lid_str
@@ -448,10 +465,11 @@ def build_dataloader_list_voxceleb2(cfg, mreserve=False):
         lid2int = [lid2str[i].replace("_", " ") for i in range(len(lid2str))]
         pass
     #print(lid2str)
+    #print(lid2face, len(lid2face))
     #print(lid2int, len(lid2int), len(splits["test"]))
     lid2int = tokenize(lid2int, as_list=True)
     lid2int = np.array(list(itertools.zip_longest(*lid2int, fillvalue=0))).T
-    return loader_tuple, lid2str, lid2int, None
+    return loader_tuple, lid2str, lid2int, lid2face
 
 def build_dataloader_list(cfg, mreserve=False):
     if cfg.running.data_name == "esc50":

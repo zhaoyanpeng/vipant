@@ -6,6 +6,8 @@ import torch
 import torch.distributed as dist
 import jax.numpy as jnp
 
+from .function import make_dummy_image_with_text
+
 def seed_all_rng(seed):
     random.seed(seed)
     numpy.random.seed(seed)

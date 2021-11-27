@@ -70,6 +70,8 @@ class Monitor(object):
     def encode_audios(self):
         rcfg = self.cfg.running
         model_file = "bimodal_00071478" #cfg.model_file
+        model_file = "al_gc_00006210" #cfg.model_file
+        model_file = "al_rc_00000690" #cfg.model_file
         audio_root = f"{rcfg.data_root}/{model_file}"
         if not os.path.exists(audio_root):
             os.makedirs(audio_root)
@@ -159,9 +161,9 @@ class Monitor(object):
                     self.echo(f"{report}")
                 return None
 
-            #with torch.no_grad():
-            #    self.encode_audios()
-            #return None
+            with torch.no_grad():
+                self.encode_audios()
+            return None
 
             self.echo("Evaluating started...")
             with torch.no_grad():

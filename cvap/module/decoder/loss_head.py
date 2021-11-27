@@ -459,13 +459,19 @@ class JaxClassificationHead(LossHead):
         if text is not None:
             audios = jax.numpy.concatenate(self.audios)
             labels = jax.numpy.concatenate(self.x2s)
-            if not self.normalized:
-                audios = unit_normalize(audios)
-                text = unit_normalize(text)
-            # audio -> label
-            x12 = jnp.einsum('bh,lh->bl', audios, text)
-            ind_12 = jnp.argsort(-x12)
 
+            if audios.ndim == 3:
+                # audio -> label
+                x12 = jnp.einsum('bkh,lh->bkl', audios, text)
+                x12 = jnp.mean(x12, 1)
+            elif audios.ndim == 2:
+                if not self.normalized:
+                    audios = unit_normalize(audios)
+                    text = unit_normalize(text)
+                # audio -> label
+                x12 = jnp.einsum('bh,lh->bl', audios, text)
+
+            ind_12 = jnp.argsort(-x12)
             # top-1 prediction
             predictions = ind_12[:, 0]
             label_map = kwargs.get("label_map", None)

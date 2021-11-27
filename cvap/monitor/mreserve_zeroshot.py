@@ -64,12 +64,6 @@ class Monitor(Monitor):
         report_by_fold = list()
         device_ids = [i for i in range(self.cfg.num_gpus)]
         
-        prompt = self.cfg.running.prompt.strip()
-        prompt = "" if prompt == "" else prompt + " " 
-        lid2str = [prompt + self.lid2str[i].replace("_", " ") for i in range(len(self.lid2str))]
-        text_features = self.model.encode_text(lid2str, device_ids=device_ids)
-        self.echo(lid2str)
-
         for ifold, (_, evalloader_fn) in enumerate(self.loader_list):
             _, dataloader = evalloader_fn()
             nsample, nchunk, nbatch = 0, 1, len(dataloader)
@@ -98,8 +92,14 @@ class Monitor(Monitor):
             if break_me:
                 break
 
+        prompt = self.cfg.running.prompt.strip()
+        prompt = "" if prompt == "" else prompt + " "
+        lid2str = [prompt + self.lid2str[i].replace("_", " ") for i in range(len(self.lid2str))]
+        text_features = self.model.encode_text(lid2str, device_ids=device_ids, label_map=self.label_map) #None) #
+        self.echo(lid2str)
+
         model = self.model.module if isinstance(self.model, DistributedDataParallel) else self.model
-        report = model.report(text=text_features, label_map=self.label_map)
+        report = model.report(text=text_features, label_map=None) #self.label_map)
         self.echo(f"{report}")
 
         precision = re.search("=\s(\d+\.\d+)\s\@", report)

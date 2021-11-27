@@ -4,6 +4,7 @@ norms: []
 eval_norms: False
 normalized: False
 dither: 0.0
+tile_audio: False
 frame_shift: 10
 htk_compat: True 
 use_energy: False
