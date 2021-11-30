@@ -27,11 +27,12 @@ class CLAPDP(nn.Module):
             return self.forward_retrieval(audios, text, *args, **kwargs)
         device_ids = kwargs.get("device_ids", [0])
         # how to asynchronize the two `data_parallel`
-        kwargs = {"normalized": False, "names": kwargs.get("names", None)}
+        kwargs = {"normalized": False, "require_feature": True, "names": kwargs.get("names", None)}
         _, audio_features = data_parallel(
             self.audio_head, audios, device_ids=device_ids, module_kwargs=kwargs
         )
-        text_input = (text, audio_features, self.audio_head.time_first)
+        time_first = True #self.audio_head.time_first
+        text_input = (text, audio_features, time_first)
         _, logits, predictions = data_parallel(
             self.text_head, text_input, device_ids=device_ids, module_kwargs=kwargs
         )

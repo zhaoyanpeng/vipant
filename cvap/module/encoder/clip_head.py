@@ -98,7 +98,8 @@ class MetaHead(nn.Module):
     def forward(self, x: torch.Tensor, *args, **kwargs):
         kwargs.update({
             "positional_embedding": self.misc.pos_embedding, 
-            "class_embedding": self.misc.cls_embedding
+            "class_embedding": self.misc.cls_embedding,
+            "position_resolution": self.misc.position_resolution
         })
         x = self.pre_encoder(x, **kwargs) # (N, L, D)
         x = self.pre_encoder_addon(x, **kwargs) # (N, L, D)

@@ -274,8 +274,17 @@ class ViTPostEncoder(MetaEncoder):
         self, 
         x: torch.Tensor, 
         positional_embedding: torch.Tensor = None,
-        class_embedding: torch.Tensor = None, **kwargs
+        class_embedding: torch.Tensor = None,
+        position_resolution: list = None,
+        require_feature: bool = False, **kwargs
     ):
+        if require_feature: # Transformer encoder-decoder model
+            x = self.ln(x)
+            feature = x[:, 1:]
+            N, _, D = feature.shape
+            nrow, ncol = position_resolution
+            feature = feature.view(N, nrow, ncol, D)
+            return x[:, 0, :] @ self.proj, feature
         x = self.ln(x[:, 0, :])
         x = x @ self.proj
         return x

@@ -102,8 +102,18 @@ class Monitor(Monitor):
             self.cfg, eval_name, shuffle=False, train=False
         ) if do_eval else (None, None)
         if self.evalloader is not None:
-            self.echo(f"Will do evaluation every {rcfg.save_rate} steps on {len(self.evalloader)} batches.")
+            self.echo(f"Will do evaluation every {rcfg.save_rate} steps on {len(self.evalloader)} batches ({eval_name}).")
             self.gold_file = f"{rcfg.data_root}/{eval_name}.csv"
+        # test
+        test_name = "IGNORE_ME" if self.cfg.eval else rcfg.test_name
+        data_path = f"{rcfg.data_root}/{test_name}"
+        do_eval = os.path.isdir(data_path) or os.path.isfile(f"{data_path}.csv") #or tf.io.gfile.exists(f"{data_path}.csv")
+        _, self.testloader = build_dataloader(
+            self.cfg, test_name, shuffle=False, train=False,
+        ) if do_eval else (None, None)
+        if self.testloader is not None:
+            self.echo(f"Will do test every {rcfg.save_rate} steps on {len(self.testloader)} batches ({test_name}).")
+            self.gold_file_test = f"{rcfg.data_root}/{test_name}.csv"
 
     def learn(self):
         if self.cfg.running.audio.eval_norms:
@@ -111,9 +121,9 @@ class Monitor(Monitor):
         if not self.model.training:
             self.echo("Evaluating started...")
 
-            with torch.no_grad():
-                self.encode_text()
-            return None
+            #with torch.no_grad():
+            #    self.encode_text()
+            #return None
 
             if self.cfg.model_file.endswith(".out"):
                 with torch.no_grad():
@@ -243,6 +253,18 @@ class Monitor(Monitor):
                     self.model.train(True)
                 if report != "":
                     self.echo(f"{report}")
+
+                report = ""
+                if self.testloader is not None and loss.detach() < 5.: # no need to eval if CE is too large
+                    self.model.train(False)
+                    with torch.no_grad():
+                        report = self.infer(
+                            self.testloader, samples=self.cfg.running.test_samples, iepoch=iepoch
+                        )
+                    self.model.train(True)
+                if report != "":
+                    self.echo(f"{report}")
+
                 if self.cfg.rank == 0:
                     self.save()
             self.timeit(all_time, key="report")
