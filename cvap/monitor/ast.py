@@ -162,8 +162,9 @@ class Monitor(object):
                 return None
 
             with torch.no_grad():
-                self.encode_audios()
-            return None
+                #self.encode_audios()
+                pass
+            #return None
 
             self.echo("Evaluating started...")
             with torch.no_grad():

@@ -28,9 +28,3 @@ VAL_MODELS_REGISTRY.register(CVAPDP)
 
 def build_main_model(cfg, echo, **kwargs):
     return VAL_MODELS_REGISTRY.get(cfg.worker)(cfg, echo)
-
-try: #
-    from .mreserve_clf import MreserveClassifier
-    VAL_MODELS_REGISTRY.register(MreserveClassifier)
-except ImportError:
-    pass

@@ -37,9 +37,14 @@ __pycache__
 .coverage
 .pytest_cache/
 
+
+# hard-coded 
 csv
 logs
 data
 scripts
 outputs
+*-Dockerfile
+requirements-*
+requirements_*
 configs/ai2-alexandria-fbf4c720d4a4.json

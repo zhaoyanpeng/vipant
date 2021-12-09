@@ -4,9 +4,6 @@ import random
 import numpy
 import torch
 import torch.distributed as dist
-import jax.numpy as jnp
-
-from .function import make_dummy_image_with_text
 
 def seed_all_rng(seed):
     random.seed(seed)
@@ -63,13 +60,3 @@ class AverageMeter(object):
     @property
     def average(self):
         return self.sum / self.count
-
-def unit_normalize(x):
-    """
-    Normalize `x` to have unit norm over the final dimension
-    :param x:
-    :return:
-    """
-    x_f32 = x.astype(jnp.float32)
-    x_norm = x_f32 / jnp.sqrt(jnp.square(x_f32).sum(-1, keepdims=True) + 1e-5)
-    return x_norm.astype(x.dtype)

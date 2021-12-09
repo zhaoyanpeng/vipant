@@ -17,7 +17,6 @@ import multiprocessing as mp
 import torch.utils.data as data
 import torch.nn.functional as F
 
-from . import PairImageSpectrogramTFRecords
 from .audio import (
     make_transform, _extract_kaldi_spectrogram
 )

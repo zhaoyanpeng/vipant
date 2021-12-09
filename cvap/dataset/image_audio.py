@@ -16,7 +16,6 @@ import multiprocessing as mp
 import torch.utils.data as data
 import torch.nn.functional as F
 
-from . import PairImageSpectrogramTFRecords
 from .audio import (
     make_transform, _extract_kaldi_spectrogram, FbankTransform
 )
@@ -25,28 +24,6 @@ from .image_audio_gs import (
     ImageAudioDatasetNpzGS, ImageAudioDatasetSrcGS
 )
 from .ast import make_image_transform
-
-class ImageAudioDataset(data.Dataset):
-    def __init__(self, cfg, data_name, train):
-        data_path = f"{cfg.data_root}/{data_name}"
-        records = PairImageSpectrogramTFRecords(
-            data_path, 1, max_audio_len=cfg.max_audio_len
-        )
-        self.dataset = list()
-        for iline, record in enumerate(records):
-            self.dataset.append(record) 
-            if not train and iline + 1 == cfg.eval_samples:
-                break
-        self.length = len(self.dataset)
-
-    def _shuffle(self):
-        pass
-
-    def __getitem__(self, index):
-        return self.dataset[index] 
-
-    def __len__(self):
-        return self.length
 
 class ImageAudioDatasetNpz(data.Dataset):
     """ `__getitem__' loads .npz from disk.
@@ -372,7 +349,7 @@ def build_dataloader(cfg, data_name, shuffle=True, train=True):
         else:
             dataset = ImageAudioDatasetNpzGS(rcfg, data_name, train)
     else:
-        dataset = ImageAudioDataset(rcfg, data_name, train)
+        raise ValueError(f"unrecognized dataset `{data_name}`.")
     if ddp_mode:
         assert cfg.optimizer.batch_size % cfg.num_gpus == 0
         sampler = torch.utils.data.distributed.DistributedSampler(

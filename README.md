@@ -1,28 +1,20 @@
-## A running example
-```
-python train.py +model/image=vit +model/audio=vit +model/loss=ce +optimizer=standard +running=train
-```
-## A DDP running example
-```
-#!/usr/bin/sh
+# Vision-Audio-Text (VAT) Pre-training
 
-root=./
+Code for the paper *[Learning Audio-Text Connections with Little to No Supervision](#)*.
 
-export OMP_NUM_THREADS=32
-export CUDA_VISIBLE_DEVICES="1,3,4,6"
+## Data
 
-run_type=$1
-gpu_list=(${CUDA_VISIBLE_DEVICES//,/ })
+[AudioSet](https://research.google.com/audioset/) can be downloaded and preprocessed via this [tool](https://github.com/zhaoyanpeng/audioset-dl).
 
-port=$(expr $RANDOM + 1000)
-ngpu=${#gpu_list[@]}
+## Vision-Audio (VA) Pre-training 
 
-#nohup python -m torch.utils.bottleneck train.py \
-python train_ddp.py port=$port num_gpus=$ngpu \
-        +model/image=vit \
-        +model/audio=vit \
-        +model/loss=ce \
-        +optimizer=standard \
-        +running=$run_type
-#> profile.new 2>&1 &
-```
+Check out the running script `run_bimodal_va.sh`.
+
+## Audio-Text (AT) Fine-tuning 
+
+Check out the running script `run_bimodal_at.sh`.
+
+## Dependencies
+
+## License
+MIT
