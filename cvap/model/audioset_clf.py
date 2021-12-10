@@ -25,9 +25,9 @@ from . import (
     load_checkpoint, load_clip, load_meme
 )
 
-class ASTClassifier(nn.Module):
+class ASClassifier(nn.Module):
     def __init__(self, cfg, echo):
-        super(ASTClassifier, self).__init__()
+        super(ASClassifier, self).__init__()
         self.cfg = cfg
         self.echo = echo
 

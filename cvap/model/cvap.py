@@ -15,9 +15,9 @@ from . import (
 
 from clip import load 
 
-class CVAPDP(nn.Module):
+class CVAP(nn.Module):
     def __init__(self, cfg, echo):
-        super(CVAPDP, self).__init__()
+        super(CVAP, self).__init__()
         self.cfg = cfg
         self.echo = echo
 

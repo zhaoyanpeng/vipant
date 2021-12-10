@@ -1,13 +1,11 @@
 from .helper import *
-from .audioset_classifier import AudioSetClassifier
-from .audio_classifier import AudioClassifier
-from .ast import ASTClassifier
-from .cvap_ddp import CVAPDDP
-from .cvalp_dp import CVALPDP
-from .clap_dp import CLAPDP
-from .clvp_dp import CLVPDP
-from .cvap_dp import CVAPDP
-from .cvap_siamese import CVASPDP
+from .audioset_clf import ASClassifier
+from .esc50_clf import ESClassifier
+from .cvalp import CVALP
+from .clap import CLAP
+from .clvp import CLVP
+from .cvap import CVAP
+from .siamese_va import CVASP
 
 from fvcore.common.registry import Registry
 
@@ -16,15 +14,13 @@ VAL_MODELS_REGISTRY.__doc__ = """
 Registry for vision-audio-language models.
 """
 
-VAL_MODELS_REGISTRY.register(AudioSetClassifier)
-VAL_MODELS_REGISTRY.register(AudioClassifier)
-VAL_MODELS_REGISTRY.register(ASTClassifier)
-VAL_MODELS_REGISTRY.register(CVAPDDP)
-VAL_MODELS_REGISTRY.register(CVALPDP)
-VAL_MODELS_REGISTRY.register(CVASPDP)
-VAL_MODELS_REGISTRY.register(CLAPDP)
-VAL_MODELS_REGISTRY.register(CLVPDP)
-VAL_MODELS_REGISTRY.register(CVAPDP)
+VAL_MODELS_REGISTRY.register(ASClassifier)
+VAL_MODELS_REGISTRY.register(ESClassifier)
+VAL_MODELS_REGISTRY.register(CVALP)
+VAL_MODELS_REGISTRY.register(CVASP)
+VAL_MODELS_REGISTRY.register(CLAP)
+VAL_MODELS_REGISTRY.register(CLVP)
+VAL_MODELS_REGISTRY.register(CVAP)
 
 def build_main_model(cfg, echo, **kwargs):
     return VAL_MODELS_REGISTRY.get(cfg.worker)(cfg, echo)

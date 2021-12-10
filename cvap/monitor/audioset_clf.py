@@ -16,7 +16,7 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, MultiStepLR
 
 from ..util import numel, AverageMeter
 from ..model import extract_model_file
-from ..model import ASTClassifier as Model
+from ..model import ASClassifier as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
 from ..dataset import build_ast_dataloader as build_dataloader
 from ..dataset import build_audioset_label_map as build_label_map

@@ -14,7 +14,7 @@ from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 
-from .cvap_dp import Monitor
+from .cvap import Monitor
 from ..util import numel
 from ..model import build_main_model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate

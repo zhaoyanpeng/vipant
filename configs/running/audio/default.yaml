@@ -1,16 +1,16 @@
 # kaldi
-max_len: 1000 # seq len 
+max_len: 1024 # seq len
 norms: [] 
 eval_norms: False
 normalized: False
-frame_length: 25
+dither: 0.0
+tile_audio: False
 frame_shift: 10
-window_type: hamming
+htk_compat: True
+use_energy: False
+window_type: hanning
 num_mel_bins: 128
-low_freq: 0.0
-high_freq: 8000
-use_log_fbank: True
-zero_mean_wf: False
+zero_mean_wf: True
 # transform of audios 
 transform_audio: False
 audio_transforms:

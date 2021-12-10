@@ -16,9 +16,9 @@ from . import (
 
 from clip import load 
 
-class CLAPDP(nn.Module):
+class CLAP(nn.Module):
     def __init__(self, cfg, echo):
-        super(CLAPDP, self).__init__()
+        super(CLAP, self).__init__()
         self.cfg = cfg
         self.echo = echo
 

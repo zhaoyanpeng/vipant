@@ -18,7 +18,7 @@ from torch.nn.parallel import DistributedDataParallel
 
 from clip import load 
 
-from .cvalp_dp import CVALPDP
+from .cvalp import CVALP 
 from ..module import (
     build_image_head, build_audio_head, build_text_head, build_loss_head
 )
@@ -26,9 +26,9 @@ from . import (
     load_checkpoint, load_clip, load_meme
 )
 
-class CVASPDP(CVALPDP):
+class CVASP(CVALP):
     def __init__(self, cfg, echo):
-        super(CVASPDP, self).__init__(cfg, echo)
+        super(CVASP, self).__init__(cfg, echo)
 
     def forward(
         self, images, images_v1, audios_v1, 

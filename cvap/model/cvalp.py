@@ -25,9 +25,9 @@ from . import (
     load_checkpoint, load_clip, load_meme
 )
 
-class CVALPDP(nn.Module):
+class CVALP(nn.Module):
     def __init__(self, cfg, echo):
-        super(CVALPDP, self).__init__()
+        super(CVALP, self).__init__()
         self.cfg = cfg
         self.echo = echo
 

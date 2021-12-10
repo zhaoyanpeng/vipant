@@ -12,11 +12,10 @@ import torch.nn.functional as F
 from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
+from .cvap import Monitor
 from ..util import numel
 from ..model import build_main_model, extract_model_file
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
-
-from .cvap_dp import Monitor
 
 class Monitor(Monitor):
     def __init__(self, cfg, echo, device):

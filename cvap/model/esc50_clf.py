@@ -26,9 +26,9 @@ from . import (
 )
 
 
-class AudioClassifier(nn.Module):
+class ESClassifier(nn.Module):
     def __init__(self, cfg, echo):
-        super(AudioClassifier, self).__init__()
+        super(ESClassifier, self).__init__()
         self.cfg = cfg
         self.echo = echo
 

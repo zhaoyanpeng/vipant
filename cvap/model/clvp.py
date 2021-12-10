@@ -16,9 +16,9 @@ from . import (
 
 from clip import load 
 
-class CLVPDP(nn.Module):
+class CLVP(nn.Module):
     def __init__(self, cfg, echo):
-        super(CLVPDP, self).__init__()
+        super(CLVP, self).__init__()
         self.cfg = cfg
         self.echo = echo
 
