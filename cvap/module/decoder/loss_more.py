@@ -17,7 +17,11 @@ from torch.nn.utils.rnn import pad_sequence
 
 from collections import defaultdict
 from clip import _tokenizer, LayerNorm, Transformer, ModifiedResNet, VisualTransformer
-from coco_caption.eval_metrics import evaluate_metrics as ac_metric # audio-captioning metric
+try:
+    from coco_caption.eval_metrics import evaluate_metrics as ac_metric # audio-captioning metric
+except ImportError:
+    ac_metric = lambda x, y: None # TODO not supported
+    pass
 
 from .loss_head import build_loss_head, LossHead
 

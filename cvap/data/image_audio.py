@@ -20,9 +20,9 @@ from .audio import (
 )
 from .image import make_clip_image_transform as make_image_transform
 from .image import BarlowImageTransform as ImageTransform
-from .image_audio_gs import (
-    ImageAudioDatasetNpzGS, ImageAudioDatasetSrcGS
-)
+#from .image_audio_gs import (
+#    ImageAudioDatasetNpzGS, ImageAudioDatasetSrcGS
+#)
 
 class ImageAudioDatasetNpz(data.Dataset):
     """ `__getitem__' loads .npz from disk.
@@ -341,12 +341,14 @@ def build_image_audio_dataloader(cfg, data_name, shuffle=True, train=True):
             else:
                 dataset = ImageAudioDatasetSiameseSrc(cfg, data_name, train)
         else:
-            dataset = ImageAudioDatasetSrcGS(rcfg, data_name, train)
+            #dataset = ImageAudioDatasetSrcGS(rcfg, data_name, train)
+            raise ValueError(f"unrecognized dataset `{data_name}`.")
     elif data_name.startswith("npz"):
         if not from_gs:
             dataset = ImageAudioDatasetNpz(rcfg, data_name, train)
         else:
-            dataset = ImageAudioDatasetNpzGS(rcfg, data_name, train)
+            #dataset = ImageAudioDatasetNpzGS(rcfg, data_name, train)
+            raise ValueError(f"unrecognized dataset `{data_name}`.")
     else:
         raise ValueError(f"unrecognized dataset `{data_name}`.")
     if ddp_mode:
