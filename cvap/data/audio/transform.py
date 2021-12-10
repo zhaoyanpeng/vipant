@@ -1,5 +1,6 @@
 import abc
 import torch
+import torchaudio
 import numpy as np
 from omegaconf.listconfig import ListConfig
 from omegaconf.dictconfig import DictConfig
@@ -7,7 +8,31 @@ from omegaconf.dictconfig import DictConfig
 import torchvision.transforms as transforms
 from torchvision.transforms import Compose, ToTensor, Normalize
 from torchaudio.transforms import FrequencyMasking, TimeMasking
-from .. import AbstractTransform
+
+def _extract_kaldi_spectrogram(
+    filename, params, train=True, mean_channel=False, zero_mean_wf=False, max_audio_len=1000, transform_audio=None, tile_audio=False,
+):
+    waveform, sample_rate = torchaudio.load(filename)
+    if mean_channel: # mean along channel # TODO else branch should take a specific channel
+        waveform = waveform.mean(0, keepdim=True)
+    desired_len = int((max_audio_len / 100) * sample_rate)
+    if tile_audio and desired_len > waveform.shape[-1]:
+        ntile = int(np.ceil(desired_len / waveform.shape[-1]))
+        waveform = torch.tile(waveform, (1, ntile))[:desired_len]
+    if transform_audio is not None:
+        waveform = transform_audio(waveform) 
+    waveform = RandomCrop.random_crop(
+        waveform, int((max_audio_len / 100 + 0.05) * sample_rate), train=train
+    ) # divided by 100 because kaldi has a frame shift of 10, additional 0.05s
+    if zero_mean_wf: # TODO should extract the 1st channel before the mean
+        waveform = waveform - waveform.mean()
+    fbank_feat = torchaudio.compliance.kaldi.fbank(
+        waveform,
+        sample_frequency=sample_rate,
+        **params,
+    )
+    fbank_feat = fbank_feat[:max_audio_len]
+    return fbank_feat.numpy()
 
 def make_transform(cfg):
     transform_fbank = transform_audio = None
@@ -39,6 +64,13 @@ class ToTensorKeepdim(ToTensor):
             return x
         x = super(ToTensorKeepdim, self).__call__(x[..., None])
         return x.squeeze_(0)
+
+class AbstractTransform(abc.ABC):
+    @abc.abstractmethod
+    def __call__(self, x):
+        pass
+    def __repr__(self):
+        return self.__class__.__name__ + '()'
 
 class RandomFlip(AbstractTransform):
     def __init__(self, p=0.5):

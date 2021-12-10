@@ -8,7 +8,6 @@ import warnings
 import itertools
 import torchaudio
 import numpy as np
-import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
 from PIL import Image as PILImage
@@ -28,7 +27,7 @@ from torchvision.transforms import (
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
 )
-from .ast import make_image_transform
+from .image import make_clip_image_transform as make_image_transform
 from clip import tokenize
 
 class AudioCapDatasetSrc(data.Dataset):

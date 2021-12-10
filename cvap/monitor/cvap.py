@@ -7,7 +7,6 @@ import torch
 import numpy as np
 from torch import nn
 
-import tensorflow as tf
 import torch.distributed as dist
 import torch.nn.functional as F
 from torch.nn.parallel import data_parallel
@@ -17,7 +16,7 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from ..util import numel
 from ..model import build_main_model, extract_model_file
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
-from ..dataset import build_dataloader 
+from ..data import build_image_audio_dataloader as build_dataloader 
 
 class Monitor(object):
     def __init__(self, cfg, echo, device):
@@ -79,7 +78,7 @@ class Monitor(object):
         # evaluation
         eval_name = "IGNORE_ME" if self.cfg.eval else rcfg.eval_name
         data_path = f"{rcfg.data_root}/{eval_name}"
-        do_eval = os.path.isdir(data_path) or os.path.isfile(f"{data_path}.csv") or tf.io.gfile.exists(f"{data_path}.csv")
+        do_eval = os.path.isdir(data_path) or os.path.isfile(f"{data_path}.csv") #or tf.io.gfile.exists(f"{data_path}.csv")
         _, self.evalloader = build_dataloader(
             self.cfg, eval_name, shuffle=False, train=False
         ) if do_eval else (None, None)

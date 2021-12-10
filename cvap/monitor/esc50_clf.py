@@ -19,7 +19,7 @@ from torch.nn.parallel import DistributedDataParallel
 from ..util import numel
 from ..model import build_main_model, extract_model_file
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
-from ..dataset.audio import build_dataloader_list
+from ..data import build_xfold_dataloader_list as build_dataloader
 
 class Monitor(object):
     def __init__(self, cfg, echo, device):
@@ -52,7 +52,7 @@ class Monitor(object):
         self.build_optimizer(tunable_params)
 
     def build_data(self):
-        self.loader_list, self.lid2str, self.lid2int, self.label_map = build_dataloader_list(self.cfg)
+        self.loader_list, self.lid2str, self.lid2int, self.label_map = build_dataloader(self.cfg)
         return len(self.lid2str)
         
     def learn(self):

@@ -5,7 +5,6 @@ import torch
 import warnings
 import torchaudio
 import numpy as np
-import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
 from PIL import Image as PILImage
@@ -19,11 +18,11 @@ import torch.nn.functional as F
 from .audio import (
     make_transform, _extract_kaldi_spectrogram, FbankTransform
 )
+from .image import make_clip_image_transform as make_image_transform
 from .image import BarlowImageTransform as ImageTransform
 from .image_audio_gs import (
     ImageAudioDatasetNpzGS, ImageAudioDatasetSrcGS
 )
-from .ast import make_image_transform
 
 class ImageAudioDatasetNpz(data.Dataset):
     """ `__getitem__' loads .npz from disk.
@@ -331,7 +330,7 @@ class ImageAudioCollator:
                 union["name"],
             )
 
-def build_dataloader(cfg, data_name, shuffle=True, train=True):
+def build_image_audio_dataloader(cfg, data_name, shuffle=True, train=True):
     ddp_mode = torch.distributed.is_initialized()
     rcfg = cfg.running
     from_gs = rcfg.data_root.startswith("gs://")

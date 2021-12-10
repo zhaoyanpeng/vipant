@@ -6,7 +6,6 @@ import torch
 import itertools
 import torchaudio
 import numpy as np
-import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
 from itertools import cycle, islice, chain
@@ -22,7 +21,7 @@ import torch.nn.functional as F
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
 )
-from .ast import print_label_dist, ASTNpz, ASTSrc 
+from .audioset_cls import print_label_dist, AudiosetNpz, AudiosetSrc 
 from clip import tokenize
 
 class AudiosetDatasetNpz(data.Dataset):
@@ -152,19 +151,19 @@ class ImageAudioCollator:
             text, label, name,
         )
 
-def build_ast_dataloader(cfg, data_name, label_map, shuffle=True, train=True, filters=None):
+def build_audioset_clf_dataloader(cfg, data_name, label_map, shuffle=True, train=True, filters=None):
     ddp_mode = torch.distributed.is_initialized()
     rcfg = cfg.running
     weighted = train and rcfg.weighted_sampling
     if data_name.startswith("src"):
         if not rcfg.force_npz:
-            dataset = ASTSrc(rcfg, data_name, train, label_map, weighted, filters)
+            dataset = AudiosetSrc(rcfg, data_name, train, label_map, weighted, filters)
         else:
-            dataset = ASTNpz(rcfg, data_name, train, label_map, weighted)
+            dataset = AudiosetNpz(rcfg, data_name, train, label_map, weighted)
     elif data_name.startswith("npz"):
         dataset = AudiosetDatasetNpz(rcfg, data_name, train, label_map, weighted)
     else:
-        dataset = ASTSrc(rcfg, data_name, train, label_map, weighted)
+        dataset = AudiosetSrc(rcfg, data_name, train, label_map, weighted)
         #raise ValueError(f"unrecognized data file `{data_name}`.")
     if ddp_mode:
         assert cfg.optimizer.batch_size % cfg.num_gpus == 0

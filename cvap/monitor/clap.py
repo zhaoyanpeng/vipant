@@ -13,9 +13,8 @@ from torch.nn.parallel import data_parallel
 from torch.nn.parallel import DistributedDataParallel
 
 from .cvap import Monitor
-from ..util import numel
-from ..model import build_main_model, extract_model_file
-from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
+from ..model import extract_model_file
+from ..module import adjust_learning_rate
 
 class Monitor(Monitor):
     def __init__(self, cfg, echo, device):
@@ -79,9 +78,9 @@ class Monitor(Monitor):
     def build_data(self):
         rcfg = self.cfg.running
         if rcfg.dataloader == "al":
-            from ..dataset import build_audio_text_dataloader as build_dataloader
+            from ..data import build_audio_text_dataloader as build_dataloader
         elif rcfg.dataloader == "lv":
-            from ..dataset import build_image_text_dataloader as build_dataloader
+            from ..data import build_image_text_dataloader as build_dataloader
         else:
             raise ValueError("Unknown data loader `{rcfg.dataloader}`.")
         data_name = rcfg.eval_name if self.cfg.eval else rcfg.data_name

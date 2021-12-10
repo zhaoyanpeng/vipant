@@ -7,7 +7,6 @@ import torch
 import itertools
 import torchaudio
 import numpy as np
-import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
 from collections import defaultdict
@@ -19,37 +18,12 @@ import torch.utils.data as data
 import torch.nn.functional as F
 
 from clip import tokenize
-from .transform import make_transform, RandomCrop
+from .audio import _extract_kaldi_spectrogram, make_transform, RandomCrop
 
 try:
     from mreserve.preprocess import video_to_segments, preprocess_video
 except ImportError:
     pass
-
-def _extract_kaldi_spectrogram(
-    filename, params, train=True, mean_channel=False, zero_mean_wf=False, max_audio_len=1000, transform_audio=None, tile_audio=False,
-):
-    waveform, sample_rate = torchaudio.load(filename)
-    if mean_channel: # mean along channel # TODO else branch should take a specific channel
-        waveform = waveform.mean(0, keepdim=True)
-    desired_len = int((max_audio_len / 100) * sample_rate)
-    if tile_audio and desired_len > waveform.shape[-1]:
-        ntile = int(np.ceil(desired_len / waveform.shape[-1]))
-        waveform = torch.tile(waveform, (1, ntile))[:desired_len]
-    if transform_audio is not None:
-        waveform = transform_audio(waveform) 
-    waveform = RandomCrop.random_crop(
-        waveform, int((max_audio_len / 100 + 0.05) * sample_rate), train=train
-    ) # divided by 100 because kaldi has a frame shift of 10, additional 0.05s
-    if zero_mean_wf: # TODO should extract the 1st channel before the mean
-        waveform = waveform - waveform.mean()
-    fbank_feat = torchaudio.compliance.kaldi.fbank(
-        waveform,
-        sample_frequency=sample_rate,
-        **params,
-    )
-    fbank_feat = fbank_feat[:max_audio_len]
-    return fbank_feat.numpy()
 
 class ImageAudioDatasetSrc(data.Dataset):
     """ `__getitem__' loads raw file from disk.
@@ -471,7 +445,7 @@ def build_dataloader_list_voxceleb2(cfg, mreserve=False):
     lid2int = np.array(list(itertools.zip_longest(*lid2int, fillvalue=0))).T
     return loader_tuple, lid2str, lid2int, lid2face
 
-def build_dataloader_list(cfg, mreserve=False):
+def build_xfold_dataloader_list(cfg, mreserve=False):
     if cfg.running.data_name == "esc50":
         return build_dataloader_list_esc50(cfg, mreserve=mreserve)
     elif cfg.running.data_name == "UrbanSound8K":

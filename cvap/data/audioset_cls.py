@@ -9,7 +9,6 @@ import warnings
 import itertools
 import torchaudio
 import numpy as np
-import tensorflow as tf
 #import asyncstdlib as a
 from pathlib import Path
 from tqdm import tqdm
@@ -34,6 +33,7 @@ from torchvision.transforms import (
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
 )
+from .image import make_clip_image_transform as make_image_transform
 from clip import tokenize
 
 def print_label_dist(cfg, echo, label_counts, label_map, ncol=30):
@@ -57,17 +57,8 @@ def print_label_dist(cfg, echo, label_counts, label_map, ncol=30):
     msg = colored(table, "cyan")
     echo(f"Distribution of instances among all {len(label_map)} categories:\n{msg}")
 
-def make_image_transform(n_px):
-    return Compose([
-        Resize(n_px, interpolation=InterpolationMode.BICUBIC),
-        CenterCrop(n_px),
-        lambda image: image.convert("RGB"),
-        ToTensor(),
-        Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
-    ])
-
-class ASTNpz(data.Dataset):
-    """ `__getitem__' loads raw file from disk. The same inputs as ASTSrc.
+class AudiosetNpz(data.Dataset):
+    """ `__getitem__' loads raw file from disk. The same inputs as AudiosetSrc.
     """
     def __init__(self, cfg, data_name, train, label_map, weighted):
         data_path = f"{cfg.data_root}/{data_name}.csv"
@@ -199,7 +190,7 @@ class ASTNpz(data.Dataset):
     def __len__(self):
         return self.length
 
-class ASTSrc(data.Dataset):
+class AudiosetSrc(data.Dataset):
     """ `__getitem__' loads raw file from disk.
     """
     def __init__(self, cfg, data_name, train, label_map, weighted, filter_set=None, external_text=None):

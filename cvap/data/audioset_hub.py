@@ -5,7 +5,6 @@ import torch
 import itertools
 import torchaudio
 import numpy as np
-import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
 from itertools import cycle, islice, chain
@@ -19,14 +18,14 @@ import torch.nn.functional as F
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
 )
-from .ast import ASTNpz, ASTSrc
-from .audioset_cap import AudioCapDatasetSrc
-from .audioset_ast import AudiosetDatasetNpz, ImageAudioCollator
+from .audiocaps import AudioCapDatasetSrc
+from .audioset_cls import AudiosetNpz, AudiosetSrc
+from .audioset_clf import AudiosetDatasetNpz, ImageAudioCollator
 from clip import tokenize
 
 ###
 # this file ocntains the very first implementations of AudioSet data loader.
-# we now have clf-focused loader in ast.py and audioset_ast.py
+# we now have clf-focused loader in audioset_clf.py and audioset_ast.py
 # and contrastive-focused loader in image_audio.py and this file.
 ###
 
@@ -111,9 +110,9 @@ def build_audioset_dataloader(cfg, data_name, label_map, shuffle=True, train=Tru
     rcfg = cfg.running
     if data_name.startswith("src"):
         if not rcfg.force_npz:
-            dataset = ASTSrc(rcfg, data_name, train, label_map, False, external_text=external_text, filter_set=filters)
+            dataset = AudiosetSrc(rcfg, data_name, train, label_map, False, external_text=external_text, filter_set=filters)
         else:
-            dataset = ASTNpz(rcfg, data_name, train, label_map, False, external_text=external_text)
+            dataset = AudiosetNpz(rcfg, data_name, train, label_map, False, external_text=external_text)
     elif data_name.startswith("npz"):
         dataset = AudiosetDatasetNpz(rcfg, data_name, train, label_map, False)
     elif data_name.startswith("audiocaps"): # audio captioning

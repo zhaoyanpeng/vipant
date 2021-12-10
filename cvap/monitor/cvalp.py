@@ -16,9 +16,9 @@ from torch.nn.parallel import DistributedDataParallel
 from ..util import numel
 from ..model import CVALP as Model
 from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
-from ..dataset import build_audioset_dataloader as build_dataloader
-from ..dataset import build_audioset_label_map as build_label_map
-from ..dataset import build_filter_set
+from ..data import build_audioset_dataloader as build_dataloader
+from ..data import build_audioset_label_map as build_label_map
+from ..data import build_filter_set
 
 class Monitor(object):
     def __init__(self, cfg, echo, device):

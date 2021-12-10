@@ -7,7 +7,6 @@ import torch
 import numpy as np
 from torch import nn
 
-import tensorflow as tf
 import torch.distributed as dist
 import torch.nn.functional as F
 from torch.nn.parallel import data_parallel
@@ -15,10 +14,7 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 
 from .cvap import Monitor
-from ..util import numel
-from ..model import build_main_model
-from ..module import LARS, exclude_bias_or_norm, adjust_learning_rate
-from ..dataset import build_dataloader 
+from ..module import adjust_learning_rate
 
 class Monitor(Monitor):
     def __init__(self, cfg, echo, device):

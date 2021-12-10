@@ -6,7 +6,6 @@ import torch
 import itertools
 import torchaudio
 import numpy as np
-import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
 from itertools import cycle, islice, chain
@@ -17,7 +16,7 @@ import torch.utils.data as data
 import torch.nn.functional as F
 
 from .audio import (
-    make_transform, build_dataloader_list, _extract_kaldi_spectrogram 
+    make_transform, _extract_kaldi_spectrogram 
 )
 from clip import tokenize
 

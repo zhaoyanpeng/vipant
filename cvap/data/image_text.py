@@ -7,7 +7,6 @@ import warnings
 import itertools
 import torchaudio
 import numpy as np
-import tensorflow as tf
 from pathlib import Path
 from tqdm import tqdm
 from PIL import Image as PILImage
@@ -18,10 +17,10 @@ import multiprocessing as mp
 import torch.utils.data as data
 import torch.nn.functional as F
 
-from .ast import make_image_transform
 from .audio import (
     make_transform, _extract_kaldi_spectrogram 
 )
+from .image import make_clip_image_transform as make_image_transform
 from .audio_text import (
     build_dataloader, build_audiocaps_data_list, AudioTextDatasetSrc
 )
