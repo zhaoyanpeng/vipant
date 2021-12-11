@@ -1,17 +1,17 @@
-clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
+clip_model_root: "/net/nfs2.mosaic/yann/model/clip"
 clip_model_name: "ViT-B32"
 data_root: "/home/yanpengz/data/audioset" 
-data_name: 'npz_unbalanced_train_segments'
-eval_name: 'npz_balanced_train_segments' #'eval' #
-test_name: 'eval'
+data_name: 'src_unbalanced_train_segments'
+eval_name: 'src_balanced_train_segments' #'eval' #
+test_name: ''
 train_samples: 1. # fraction
 eval_samples: 5184 #5000
 test_samples: 5000
-peep_rate: 1 
-save_rate: 300 
-batch_size: 432 #108 #216 # 
-epochs: 1000 
-save_epoch: False
+peep_rate: 1
+save_rate: 1e9
+batch_size: 432 #108 #216 #
+epochs: 1000
+save_epoch: True
 multi_view: False
 frame_key: "frame"
 frame_emb: null
@@ -23,10 +23,10 @@ resolution: ${model.image.resolution}
 # audio backbone
 max_audio_len: ${running.audio.max_len}
 num_mel_bins: ${running.audio.num_mel_bins}
-#off # on: true interpreted by YAML, so on/off cannot be used as the keys 
+#off # on: true interpreted by YAML, so on/off cannot be used as the keys
 #share, or not share; the image head as the reference
-siamese: 
-    alive: False 
-    keep_hp: True # keep run-time hyperparameters 
+siamese:
+    alive: False
+    keep_hp: True # keep run-time hyperparameters
     amodules: [] #, "pre_encoder", "post_encoder", "misc"]
     lmodules: [] #"encoder"]

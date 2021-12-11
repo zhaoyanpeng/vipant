@@ -1,5 +1,5 @@
 # kaldi
-max_len: 1024 # seq len
+max_len: 1000 # seq len
 norms: [] 
 eval_norms: False
 normalized: False
@@ -13,13 +13,9 @@ num_mel_bins: 128
 zero_mean_wf: True
 # transform of audios 
 transform_audio: False
-audio_transforms:
-- [RandomFlip, {p: 0.5}]
-- [RandomScale, {scale: 1.5, keep_len: True}]
-- [RandomNoise, {snr_min_db: 10.0, snr_max_db: 120.0, p: 0.25}]
+audio_transforms: []
 # transform of fbanks 
 transform_fbank: True 
 fbank_transforms:
-- [SimpleRandomNoise, []]
-- [FrequencyMasking, [25]]
-- [TimeMasking, [100]]
+- [FrequencyMasking, [32]]
+- [TimeMasking, [200]]

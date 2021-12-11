@@ -1,21 +1,21 @@
-clip_model_root: "/net/nfs2.mosaic/yann/model/clip" 
+clip_model_root: "/net/nfs2.mosaic/yann/model/clip"
 clip_model_name: "ViT-B32"
-data_root: "/home/yanpengz/data/audioset" 
+data_root: "/home/yanpengz/data/audioset"
 prompt: "the sound of"
 cat_label: False
 filter_set: null
-label_map: "ontology,eval_segments" 
-data_name: 'npz_train_toy' #'src_train_toy' #
-eval_name: 'npz_eval_toy' #'src_eval_toy' #
-test_name: 'npz_eval_toy' #'src_eval_toy' #
+label_map: "ontology,eval_segments"
+data_name: '' #
+eval_name: '' #
+test_name: '' #
 train_samples: 1. # fraction
-eval_samples: 250 
+eval_samples: 250
 test_samples: 250
-peep_rate: 1 
-save_rate: 3 
-batch_size: 64 
-epochs: 1000 
-save_epoch: False
+peep_rate: 1
+save_rate: 1e9
+batch_size: 64
+epochs: 1000
+save_epoch: True
 frame_key: "frame"
 frame_emb: null
 text_emb: null
@@ -23,18 +23,18 @@ embed_dim: ${model.image.embed_dim}
 force_npz: False # force to use npz, i.e., precomputed image and audio features
 clf: False
 np_rnd: False
-imagine: True 
+imagine: True
 mixup_rate: 0.0
 weighted_sampling: False
 # vision backbone
 resolution: ${model.image.resolution}
 # audio backbone
 max_audio_len: ${running.audio.max_len}
-num_mel_bins: ${running.audio.num_mel_bins} 
-#off # on: true interpreted by YAML, so on/off cannot be used as the keys 
+num_mel_bins: ${running.audio.num_mel_bins}
+#off # on: true interpreted by YAML, so on/off cannot be used as the keys
 #share, or not share; the image head as the reference
-siamese: 
-    alive: False 
-    keep_hp: True # keep run-time hyperparameters 
+siamese:
+    alive: False
+    keep_hp: True # keep run-time hyperparameters
     amodules: [] #, "pre_encoder", "post_encoder", "misc"]
     lmodules: [] #"encoder"]
